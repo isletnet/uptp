@@ -356,7 +356,11 @@ func (uc *Uptpc) onConnClose(c *uptpconn, err error) {
 func (uc *Uptpc) handleRecvData(c *uptpconn, head *uptpHead, data []byte) {
 	if head.From != 0 {
 		//connection accept from other peer, send rsp every msg
-		c.sendMessage(0, head.From, 1, nil)
+		tn := time.Now().Unix()
+		if tn-c.rspTime > 10 {
+			c.sendMessage(0, head.From, 1, nil)
+			c.rspTime = tn
+		}
 	}
 	if head.To != uc.cid {
 		//forward

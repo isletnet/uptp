@@ -16,6 +16,7 @@ type uptpconn struct {
 	checkRecv uint32
 	peerID    int64
 	isClient  bool
+	rspTime   int64
 }
 
 func newUPTPConn(c net.Conn) *uptpconn {
