@@ -22,7 +22,7 @@ type peerSock struct {
 	peerID  int64
 	mux     sync.Mutex
 	cond    *sync.Cond
-	conn    *uptpconn
+	conn    *rawUDPconn
 	stopSig chan struct{}
 	ready   bool
 }
@@ -32,10 +32,10 @@ type peerSockMgr struct {
 	cache  map[int64]*peerSock
 	reqCB  func(int64) error
 	toCB   func(int64)
-	addrCB func(int64, string) (*uptpconn, error)
+	addrCB func(int64, string) (*rawUDPconn, error)
 }
 
-func newPeerSockMgr(reqCB func(int64) error, toCB func(int64), addrCB func(int64, string) (*uptpconn, error)) *peerSockMgr {
+func newPeerSockMgr(reqCB func(int64) error, toCB func(int64), addrCB func(int64, string) (*rawUDPconn, error)) *peerSockMgr {
 	ps := peerSockMgr{
 		cache:  make(map[int64]*peerSock),
 		reqCB:  reqCB,
@@ -45,7 +45,7 @@ func newPeerSockMgr(reqCB func(int64) error, toCB func(int64), addrCB func(int64
 	return &ps
 }
 
-func (pm *peerSockMgr) getConn(peerID int64) (*uptpconn, error) {
+func (pm *peerSockMgr) getConn(peerID int64) (*rawUDPconn, error) {
 	pm.mux.Lock()
 	ps, ok := pm.cache[peerID]
 	if !ok {
@@ -109,7 +109,7 @@ func newPeerSock(id int64) *peerSock {
 	}
 }
 
-func (ps *peerSock) getConn(tocb func(int64)) (*uptpconn, error) {
+func (ps *peerSock) getConn(tocb func(int64)) (*rawUDPconn, error) {
 	ps.mux.Lock()
 	defer ps.mux.Unlock()
 	if ps.ready {
@@ -159,11 +159,11 @@ type connCheckItem struct {
 }
 
 type Uptpc struct {
-	g                *nbio.Gopher
-	cache            sync.Map
-	appHandleFunc    map[uint32]func(*uptpconn, *uptpHead, []byte)
-	messageHandleMap []func(*uptpconn, *uptpHead, []byte)
-	serverConn       *uptpconn
+	g             *nbio.Gopher
+	cache         sync.Map
+	appHandleFunc map[uint32]func(*rawUDPconn, *uptpHead, []byte)
+	// messageHandleMap []func(*rawUDPconn, *uptpHead, []byte)
+	serverConn       *rawUDPconn
 	cid              int64
 	mux              sync.RWMutex
 	heartbeatTK      *time.Ticker
@@ -193,7 +193,7 @@ func (uc *Uptpc) GetNptpCID() int64 {
 	return ret
 }
 
-func (uc *Uptpc) setConnect(conn *uptpconn, cid int64) {
+func (uc *Uptpc) setConnect(conn *rawUDPconn, cid int64) {
 	if cid != uc.info.Token {
 		uc.info.Token = cid
 	}
@@ -220,7 +220,7 @@ func (uc *Uptpc) sendMessageToServer(appID uint32, data []byte) error {
 }
 
 func NewUPTPClient(nc NptpcConfig) *Uptpc {
-	h := make(map[uint32]func(*uptpconn, *uptpHead, []byte))
+	h := make(map[uint32]func(*rawUDPconn, *uptpHead, []byte))
 	ret := &Uptpc{
 		appHandleFunc:    h,
 		info:             &nc,
@@ -235,11 +235,11 @@ func NewUPTPClient(nc NptpcConfig) *Uptpc {
 		UDPReadTimeout:     time.Second * 30,
 		ListenUDP:          ret.funListenUDP,
 	})
-	g.OnData(wrapOnData(ret.handleRecvData, nil))
-	g.OnOpen(wrapOnOpen(nil))
-	g.OnClose(wrapOnClose(ret.onConnClose))
+	g.OnData(wrapOnDataRawUDPConn(ret.handleRecvData, nil))
+	g.OnOpen(wrapOnOpenRawUDPConn(nil))
+	g.OnClose(wrapOnCloseRawUDPConn(ret.onConnClose))
 	ret.g = g
-	ret.messageHandleMap = []func(*uptpconn, *uptpHead, []byte){ret.handleV1Data}
+	// ret.messageHandleMap = []func(*rawUDPconn, *uptpHead, []byte){ret.handleV1Data}
 	ret.appHandleFunc[1] = ret.appid1handler
 	ret.appHandleFunc[2] = ret.appid2handler
 	ret.psm = newPeerSockMgr(ret.queryAddrByID, ret.waitPeerConnectTimeout, ret.dialPeer)
@@ -290,7 +290,7 @@ func (uc *Uptpc) startConnectServer() {
 
 func (uc *Uptpc) connectServer() error {
 	log.Println("start to connect server:", uc.info.ServerAddr)
-	uptpConn, err := dialRawConn(uc.info.ServerAddr, uc.g)
+	uptpConn, err := dialRawUDPConn(uc.info.ServerAddr, uc.g)
 	if err != nil {
 		return err
 	}
@@ -316,19 +316,19 @@ func (uc *Uptpc) Stop() {
 type appHandler func(from int64, data []byte)
 
 func (uc *Uptpc) RegisterAppID(appID uint32, h appHandler) {
-	uc.appHandleFunc[appID] = func(u *uptpconn, uh *uptpHead, b []byte) {
+	uc.appHandleFunc[appID] = func(u *rawUDPconn, uh *uptpHead, b []byte) {
 		h(uh.From, b)
 	}
 }
 
-func (uc *Uptpc) getPeerConn(cid int64) (*uptpconn, error) {
+func (uc *Uptpc) getPeerConn(cid int64) (*rawUDPconn, error) {
 	if !uc.isRunning {
 		return nil, fmt.Errorf("uptp client is not running")
 	}
 	return uc.psm.getConn(cid)
 }
 
-func (uc *Uptpc) onConnClose(c *uptpconn, err error) {
+func (uc *Uptpc) onConnClose(c *rawUDPconn, err error) {
 	if c.peerID == 0 {
 		if !c.isClient {
 			//ignore connect accept from other peer
@@ -353,23 +353,16 @@ func (uc *Uptpc) onConnClose(c *uptpconn, err error) {
 	}
 }
 
-func (uc *Uptpc) handleRecvData(c *uptpconn, head *uptpHead, data []byte) {
-	if head.From != 0 {
-		//connection accept from other peer, send rsp every msg
-		tn := time.Now().Unix()
-		if tn-c.rspTime > 10 {
-			c.sendMessage(0, head.From, 1, nil)
-			c.rspTime = tn
-		}
-	}
+func (uc *Uptpc) handleRecvData(c *rawUDPconn, head *uptpHead, data []byte) {
 	if head.To != uc.cid {
 		//forward
 		return
 	}
-	uc.messageHandleMap[head.Version-1](c, head, data)
+	// uc.messageHandleMap[head.Version-1](c, head, data)
+	uc.handleV1Data(c, head, data)
 }
 
-func (uc *Uptpc) handleV1Data(c *uptpconn, head *uptpHead, data []byte) {
+func (uc *Uptpc) handleV1Data(c *rawUDPconn, head *uptpHead, data []byte) {
 	// log.Printf("onV1Message: [%p, %v, %+v]", c, c.RemoteAddr().String(), *head)
 	f, ok := uc.appHandleFunc[head.AppID]
 	if !ok {
@@ -378,7 +371,7 @@ func (uc *Uptpc) handleV1Data(c *uptpconn, head *uptpHead, data []byte) {
 	f(c, head, data)
 }
 
-func (uc *Uptpc) appid1handler(c *uptpconn, head *uptpHead, data []byte) {
+func (uc *Uptpc) appid1handler(c *rawUDPconn, head *uptpHead, data []byte) {
 	if head.Len == 0 {
 		return
 	}
@@ -392,7 +385,7 @@ func (uc *Uptpc) appid1handler(c *uptpconn, head *uptpHead, data []byte) {
 	uc.startHeartbeatLoop()
 }
 
-func (uc *Uptpc) appid2handler(c *uptpconn, head *uptpHead, data []byte) {
+func (uc *Uptpc) appid2handler(c *rawUDPconn, head *uptpHead, data []byte) {
 	if len(data) < 8 {
 		return
 	}
@@ -442,9 +435,9 @@ func (uc *Uptpc) waitPeerConnectTimeout(peerID int64) {
 	uc.psm.deletePeerSock(peerID)
 }
 
-func (uc *Uptpc) dialPeer(peerID int64, peerAddr string) (*uptpconn, error) {
+func (uc *Uptpc) dialPeer(peerID int64, peerAddr string) (*rawUDPconn, error) {
 	log.Printf("start to dial peer: %d, %s", peerID, peerAddr)
-	uptpConn, err := dialRawConn(peerAddr, uc.g)
+	uptpConn, err := dialRawUDPConn(peerAddr, uc.g)
 	if err != nil {
 		return nil, err
 	}

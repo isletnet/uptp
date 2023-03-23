@@ -16,8 +16,8 @@ type Uptps struct {
 	peerMap  sync.Map
 	snowNode *snowflake.Node
 
-	messageHandleMap []func(*uptpconn, *uptpHead, []byte)
-	appHandleFunc    map[uint32]func(*uptpconn, *uptpHead, []byte)
+	// messageHandleMap []func(*rawUDPconn, *uptpHead, []byte)
+	appHandleFunc map[uint32]func(*rawUDPconn, *uptpHead, []byte)
 
 	nbioEngine *nbio.Engine
 }
@@ -40,15 +40,15 @@ func NewUPTPServer(nc NptpsConfig) *Uptps {
 	sn, _ := snowflake.NewNode(nc.SnowNode)
 	ret.snowNode = sn
 	ret.nbioEngine = g
-	ret.nbioEngine.OnData(wrapOnData(ret.handleRecvData, nil))
-	ret.nbioEngine.OnOpen(wrapOnOpen(func(u *uptpconn) {
+	ret.nbioEngine.OnData(wrapOnDataRawUDPConn(ret.handleRecvData, nil))
+	ret.nbioEngine.OnOpen(wrapOnOpenRawUDPConn(func(u *rawUDPconn) {
 		// log.Printf("onOpen: %v", u.conn.RemoteAddr().String())
 	}))
-	ret.nbioEngine.OnClose(wrapOnClose(func(u *uptpconn, err error) {
+	ret.nbioEngine.OnClose(wrapOnCloseRawUDPConn(func(u *rawUDPconn, err error) {
 		log.Printf("onClose: [%+v, %v, %v]", u, u.conn.RemoteAddr().String(), err)
 	}))
-	ret.messageHandleMap = []func(*uptpconn, *uptpHead, []byte){ret.handleV1Data}
-	ret.appHandleFunc = make(map[uint32]func(*uptpconn, *uptpHead, []byte))
+	// ret.messageHandleMap = []func(*rawUDPconn, *uptpHead, []byte){ret.handleV1Data}
+	ret.appHandleFunc = make(map[uint32]func(*rawUDPconn, *uptpHead, []byte))
 	ret.appHandleFunc[1] = ret.appid1handler
 	ret.appHandleFunc[2] = ret.appid2handler
 	// ret.appHandleFunc[3] = ret.appid3handler
@@ -56,11 +56,12 @@ func NewUPTPServer(nc NptpsConfig) *Uptps {
 	return ret
 }
 
-func (us *Uptps) handleRecvData(uptpConn *uptpconn, head *uptpHead, data []byte) {
-	us.messageHandleMap[head.Version-1](uptpConn, head, data)
+func (us *Uptps) handleRecvData(uptpConn *rawUDPconn, head *uptpHead, data []byte) {
+	// us.messageHandleMap[head.Version-1](uptpConn, head, data)
+	us.handleV1Data(uptpConn, head, data)
 }
 
-func (us *Uptps) handleV1Data(c *uptpconn, head *uptpHead, data []byte) {
+func (us *Uptps) handleV1Data(c *rawUDPconn, head *uptpHead, data []byte) {
 	f, ok := us.appHandleFunc[head.AppID]
 	if !ok {
 		return
@@ -68,7 +69,7 @@ func (us *Uptps) handleV1Data(c *uptpconn, head *uptpHead, data []byte) {
 	f(c, head, data)
 }
 
-func (us *Uptps) appid1handler(c *uptpconn, head *uptpHead, data []byte) {
+func (us *Uptps) appid1handler(c *rawUDPconn, head *uptpHead, data []byte) {
 	if head.From != 0 {
 		//hearbeat
 		c.sendMessage(0, head.From, 1, nil)
@@ -95,7 +96,7 @@ func (us *Uptps) appid1handler(c *uptpconn, head *uptpHead, data []byte) {
 	}
 }
 
-func (us *Uptps) appid2handler(c *uptpconn, head *uptpHead, data []byte) {
+func (us *Uptps) appid2handler(c *rawUDPconn, head *uptpHead, data []byte) {
 	id := int64(binary.LittleEndian.Uint64(data))
 	log.Printf("get query request from: [%v,%v], %v", c.conn.RemoteAddr().String(), head.From, id)
 	v, ok := us.peerMap.Load(id)

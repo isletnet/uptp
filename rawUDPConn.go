@@ -1,61 +1,80 @@
 package uptp
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 	"unsafe"
 
 	"github.com/lesismal/nbio"
 )
 
-type uptpconn struct {
+type rawUDPconn struct {
 	conn      net.Conn
 	checkSend uint32
 	checkRecv uint32
 	peerID    int64
 	isClient  bool
 	rspTime   int64
+
+	wMtx     sync.Mutex
+	writeBuf *bytes.Buffer
 }
 
-func newUPTPConn(c net.Conn) *uptpconn {
-	return &uptpconn{
-		conn: c,
+func newRawUDPConn(c net.Conn) *rawUDPconn {
+	buf := bytes.NewBuffer(nil)
+	buf.Grow(1600)
+	return &rawUDPconn{
+		conn:     c,
+		writeBuf: buf,
 	}
 }
 
-func (uconn *uptpconn) checkMessage(data []byte) (*uptpHead, []byte, error) {
-	head, content, err := UnmarshalUPTPMessage(data)
+func (uconn *rawUDPconn) checkMessage(data []byte) (*uptpHead, uint32, []byte, error) {
+	if len(data) < 4 {
+		return nil, 0, nil, fmt.Errorf("wrong packet: to small")
+	}
+	check := binary.LittleEndian.Uint32(data[:4])
+	head, content, err := UnmarshalUPTPMessage(data[4:])
 	if err != nil {
-		return nil, nil, err
+		return nil, 0, nil, err
 	}
 	if int(head.Len) != len(content) {
-		return nil, nil, fmt.Errorf("data len check fail")
+		return nil, 0, nil, fmt.Errorf("data len check fail")
 	}
-	return head, content, nil
+	return head, check, content, nil
 }
 
-func (uconn *uptpconn) sendMessage(from, to int64, appID uint32, content []byte) error {
+func (uconn *rawUDPconn) sendMessage(from, to int64, appID uint32, content []byte) error {
 	// if !uconn.ready && appID == 0 {
 	// 	return fmt.Errorf("uptp connect is not ready to send message")
 	// }
-	sendData, err := marshalUPTPMessage(from, to, appID, uconn.checkSend, content)
+	uconn.wMtx.Lock()
+	defer uconn.wMtx.Unlock()
+	err := binary.Write(uconn.writeBuf, binary.LittleEndian, uconn.checkSend)
 	if err != nil {
-		return fmt.Errorf("marshal message fail: %s", err)
+		return fmt.Errorf("write check to buffer fail:%s", err)
 	}
-	_, err = uconn.conn.Write(sendData)
+	err = marshalUPTPMessageToBuffer(from, to, appID, content, uconn.writeBuf)
+	if err != nil {
+		return fmt.Errorf("write uptp message to buffer fail: %s", err)
+	}
+	_, err = uconn.conn.Write(uconn.writeBuf.Bytes())
 	if err != nil {
 		return fmt.Errorf("send uptp message fail: %s", err)
 	}
+	uconn.writeBuf.Reset()
 	return nil
 }
 
-func (uconn *uptpconn) close() error {
+func (uconn *rawUDPconn) close() error {
 	return uconn.conn.Close()
 }
 
-func dialRawConn(addr string, eg *nbio.Engine) (*uptpconn, error) {
+func dialRawUDPConn(addr string, eg *nbio.Engine) (*rawUDPconn, error) {
 	ua, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
 		return nil, err
@@ -67,12 +86,18 @@ func dialRawConn(addr string, eg *nbio.Engine) (*uptpconn, error) {
 	checkRecv := uint32(uintptr(unsafe.Pointer(c)))
 	buf := make([]byte, 4)
 	binary.LittleEndian.PutUint32(buf, checkRecv)
-	sendData, err := marshalUPTPMessage(0, 0, 0, 0, buf)
+	sendBuf := bytes.NewBuffer(nil)
+	err = binary.Write(sendBuf, binary.LittleEndian, uint32(0))
 	if err != nil {
 		c.Close()
 		return nil, err
 	}
-	_, err = c.Write(sendData)
+	err = marshalUPTPMessageToBuffer(0, 0, 0, buf, sendBuf)
+	if err != nil {
+		c.Close()
+		return nil, err
+	}
+	_, err = c.Write(sendBuf.Bytes())
 	if err != nil {
 		c.Close()
 		return nil, err
@@ -84,11 +109,11 @@ func dialRawConn(addr string, eg *nbio.Engine) (*uptpconn, error) {
 		c.Close()
 		return nil, err
 	}
-	if n < sizeUPTPHead {
+	if n < sizeUPTPHead+4 {
 		c.Close()
 		return nil, fmt.Errorf("wrong handshake response")
 	}
-	head, content, err := UnmarshalUPTPMessage(rsp[:n])
+	head, content, err := UnmarshalUPTPMessage(rsp[4:n])
 	if err != nil {
 		c.Close()
 		return nil, err
@@ -108,7 +133,7 @@ func dialRawConn(addr string, eg *nbio.Engine) (*uptpconn, error) {
 		c.Close()
 		return nil, fmt.Errorf("known error add connect")
 	}
-	uptpConn := newUPTPConn(nc)
+	uptpConn := newRawUDPConn(nc)
 	uptpConn.checkSend = u
 	uptpConn.checkRecv = checkRecv
 	uptpConn.isClient = true
@@ -116,9 +141,9 @@ func dialRawConn(addr string, eg *nbio.Engine) (*uptpconn, error) {
 	return uptpConn, nil
 }
 
-func wrapOnOpen(h func(*uptpconn)) func(*nbio.Conn) {
+func wrapOnOpenRawUDPConn(h func(*rawUDPconn)) func(*nbio.Conn) {
 	return func(c *nbio.Conn) {
-		uptpConn := newUPTPConn(c)
+		uptpConn := newRawUDPConn(c)
 		uptpConn.isClient = false
 		uptpConn.checkRecv = uint32(uintptr(unsafe.Pointer(c)))
 		c.SetSession(uptpConn)
@@ -128,11 +153,11 @@ func wrapOnOpen(h func(*uptpconn)) func(*nbio.Conn) {
 	}
 }
 
-func wrapOnClose(h func(*uptpconn, error)) func(*nbio.Conn, error) {
+func wrapOnCloseRawUDPConn(h func(*rawUDPconn, error)) func(*nbio.Conn, error) {
 	return func(c *nbio.Conn, err error) {
 		if h != nil && c != nil {
 			if session := c.Session(); session != nil {
-				if uptpConn, ok := session.(*uptpconn); ok {
+				if uptpConn, ok := session.(*rawUDPconn); ok {
 					if h != nil {
 						h(uptpConn, err)
 					}
@@ -143,11 +168,11 @@ func wrapOnClose(h func(*uptpconn, error)) func(*nbio.Conn, error) {
 	}
 }
 
-func wrapOnData(h func(*uptpconn, *uptpHead, []byte), handshakeCheck func(*uptpHead, []byte) bool) func(*nbio.Conn, []byte) {
+func wrapOnDataRawUDPConn(h func(*rawUDPconn, *uptpHead, []byte), handshakeCheck func(*uptpHead, []byte) bool) func(*nbio.Conn, []byte) {
 	return func(c *nbio.Conn, data []byte) {
 		if session := c.Session(); session != nil {
-			if uptpConn, ok := session.(*uptpconn); ok {
-				head, content, err := uptpConn.checkMessage(data)
+			if uptpConn, ok := session.(*rawUDPconn); ok {
+				head, check, content, err := uptpConn.checkMessage(data)
 				if err != nil {
 					c.CloseWithError(fmt.Errorf("uptp message check fail:%s", err))
 					return
@@ -182,12 +207,19 @@ func wrapOnData(h func(*uptpconn, *uptpHead, []byte), handshakeCheck func(*uptpH
 					return
 				}
 
-				if head.Check != uptpConn.checkRecv {
+				if check != uptpConn.checkRecv {
 					c.CloseWithError(fmt.Errorf("message check fail"))
 					return
 				}
+
 				if uptpConn.isClient {
 					c.SetReadDeadline(time.Now().Add(time.Second * 30))
+				} else {
+					tn := time.Now().Unix()
+					if tn-uptpConn.rspTime > 10 {
+						uptpConn.sendMessage(0, head.From, 1, nil)
+						uptpConn.rspTime = tn
+					}
 				}
 				h(uptpConn, head, content)
 			}
