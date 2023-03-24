@@ -48,7 +48,7 @@ func (uconn *rawUDPconn) checkMessage(data []byte) (*uptpHead, uint32, []byte, e
 	return head, check, content, nil
 }
 
-func (uconn *rawUDPconn) sendMessage(from, to int64, appID uint32, content []byte) error {
+func (uconn *rawUDPconn) SendMessage(from, to int64, appID uint32, content []byte) error {
 	// if !uconn.ready && appID == 0 {
 	// 	return fmt.Errorf("uptp connect is not ready to send message")
 	// }
@@ -199,7 +199,7 @@ func wrapOnDataRawUDPConn(h func(*rawUDPconn, *uptpHead, []byte), handshakeCheck
 					uptpConn.checkSend = binary.LittleEndian.Uint32(content[:4])
 					buf := make([]byte, 4)
 					binary.LittleEndian.PutUint32(buf, uptpConn.checkRecv)
-					err = uptpConn.sendMessage(head.To, head.From, 0, buf)
+					err = uptpConn.SendMessage(head.To, head.From, 0, buf)
 					if err != nil {
 						c.CloseWithError(fmt.Errorf("send handshake response fail:%s", err))
 						return
@@ -217,7 +217,7 @@ func wrapOnDataRawUDPConn(h func(*rawUDPconn, *uptpHead, []byte), handshakeCheck
 				} else {
 					tn := time.Now().Unix()
 					if tn-uptpConn.rspTime > 10 {
-						uptpConn.sendMessage(0, head.From, 1, nil)
+						uptpConn.SendMessage(0, head.From, 1, nil)
 						uptpConn.rspTime = tn
 					}
 				}

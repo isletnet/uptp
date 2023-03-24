@@ -22,7 +22,7 @@ type peerSock struct {
 	peerID  int64
 	mux     sync.Mutex
 	cond    *sync.Cond
-	conn    *rawUDPconn
+	conn    uptpConn
 	stopSig chan struct{}
 	ready   bool
 }
@@ -32,10 +32,10 @@ type peerSockMgr struct {
 	cache  map[int64]*peerSock
 	reqCB  func(int64) error
 	toCB   func(int64)
-	addrCB func(int64, string) (*rawUDPconn, error)
+	addrCB func(int64, string) (uptpConn, int64, error)
 }
 
-func newPeerSockMgr(reqCB func(int64) error, toCB func(int64), addrCB func(int64, string) (*rawUDPconn, error)) *peerSockMgr {
+func newPeerSockMgr(reqCB func(int64) error, toCB func(int64), addrCB func(int64, string) (uptpConn, int64, error)) *peerSockMgr {
 	ps := peerSockMgr{
 		cache:  make(map[int64]*peerSock),
 		reqCB:  reqCB,
@@ -45,7 +45,7 @@ func newPeerSockMgr(reqCB func(int64) error, toCB func(int64), addrCB func(int64
 	return &ps
 }
 
-func (pm *peerSockMgr) getConn(peerID int64) (*rawUDPconn, error) {
+func (pm *peerSockMgr) getConn(peerID int64) (uptpConn, error) {
 	pm.mux.Lock()
 	ps, ok := pm.cache[peerID]
 	if !ok {
@@ -61,6 +61,21 @@ func (pm *peerSockMgr) getConn(peerID int64) (*rawUDPconn, error) {
 	pm.mux.Unlock()
 
 	return ps.getConn(pm.toCB)
+}
+
+func (pm *peerSockMgr) addPeerConn(peerID int64, conn uptpConn) {
+	pm.mux.Lock()
+	defer pm.mux.Unlock()
+	ps, ok := pm.cache[peerID]
+	if !ok {
+		ps = newPeerSock(peerID)
+	}
+	if ps.isReady() {
+		return
+	}
+	ps.setConnect(conn)
+	pm.cache[peerID] = ps
+	ps.stopWait()
 }
 
 func (pm *peerSockMgr) deletePeerSock(peerID int64) {
@@ -83,24 +98,27 @@ func (pm *peerSockMgr) clearPeerSock() {
 
 func (pm *peerSockMgr) handleAddr(peerID int64, peerAddr string) {
 	pm.mux.Lock()
-	defer pm.mux.Unlock()
 	ps, ok := pm.cache[peerID]
 	if !ok {
+		pm.mux.Unlock()
 		return
 	}
-	if ps.ready {
+	pm.mux.Unlock()
+	if ps.isReady() {
 		return
 	}
-	c, err := pm.addrCB(peerID, peerAddr)
+	c, cid, err := pm.addrCB(peerID, peerAddr)
 	if err != nil {
 		log.Println("handle addr fail: ", err)
 		//ps.stopWait()
 		return
 	}
-	ps.ready = true
-	ps.conn = c
+	pm.mux.Lock()
+	ps.setConnect(c)
 	pm.cache[peerID] = ps
 	ps.stopWait()
+	pm.mux.Unlock()
+	c.SendMessage(cid, peerID, 3, nil)
 }
 
 func newPeerSock(id int64) *peerSock {
@@ -109,7 +127,20 @@ func newPeerSock(id int64) *peerSock {
 	}
 }
 
-func (ps *peerSock) getConn(tocb func(int64)) (*rawUDPconn, error) {
+func (ps *peerSock) isReady() bool {
+	ps.mux.Lock()
+	defer ps.mux.Unlock()
+	return ps.ready
+}
+
+func (ps *peerSock) setConnect(conn uptpConn) {
+	ps.mux.Lock()
+	defer ps.mux.Unlock()
+	ps.conn = conn
+	ps.ready = conn != nil
+}
+
+func (ps *peerSock) getConn(tocb func(int64)) (uptpConn, error) {
 	ps.mux.Lock()
 	defer ps.mux.Unlock()
 	if ps.ready {
@@ -150,6 +181,9 @@ func (ps *peerSock) getConn(tocb func(int64)) (*rawUDPconn, error) {
 }
 
 func (ps *peerSock) stopWait() {
+	if ps.cond == nil {
+		return
+	}
 	ps.cond.Broadcast()
 }
 
@@ -161,9 +195,9 @@ type connCheckItem struct {
 type Uptpc struct {
 	g             *nbio.Gopher
 	cache         sync.Map
-	appHandleFunc map[uint32]func(*rawUDPconn, *uptpHead, []byte)
+	appHandleFunc map[uint32]func(uptpConn, *uptpHead, []byte)
 	// messageHandleMap []func(*rawUDPconn, *uptpHead, []byte)
-	serverConn       *rawUDPconn
+	serverConn       uptpConn
 	cid              int64
 	mux              sync.RWMutex
 	heartbeatTK      *time.Ticker
@@ -193,7 +227,7 @@ func (uc *Uptpc) GetNptpCID() int64 {
 	return ret
 }
 
-func (uc *Uptpc) setConnect(conn *rawUDPconn, cid int64) {
+func (uc *Uptpc) setConnect(conn uptpConn, cid int64) {
 	if cid != uc.info.Token {
 		uc.info.Token = cid
 	}
@@ -212,7 +246,7 @@ func (uc *Uptpc) sendMessageToServer(appID uint32, data []byte) error {
 	if conn == nil {
 		return fmt.Errorf("no server connection")
 	}
-	err := conn.sendMessage(cid, 0, appID, data)
+	err := conn.SendMessage(cid, 0, appID, data)
 	if err != nil {
 		return fmt.Errorf("send data to server fail:%s", err)
 	}
@@ -220,7 +254,7 @@ func (uc *Uptpc) sendMessageToServer(appID uint32, data []byte) error {
 }
 
 func NewUPTPClient(nc NptpcConfig) *Uptpc {
-	h := make(map[uint32]func(*rawUDPconn, *uptpHead, []byte))
+	h := make(map[uint32]func(uptpConn, *uptpHead, []byte))
 	ret := &Uptpc{
 		appHandleFunc:    h,
 		info:             &nc,
@@ -235,13 +269,14 @@ func NewUPTPClient(nc NptpcConfig) *Uptpc {
 		UDPReadTimeout:     time.Second * 30,
 		ListenUDP:          ret.funListenUDP,
 	})
-	g.OnData(wrapOnDataRawUDPConn(ret.handleRecvData, nil))
+	g.OnData(wrapOnDataRawUDPConn(ret.handleRawUDPData, nil))
 	g.OnOpen(wrapOnOpenRawUDPConn(nil))
-	g.OnClose(wrapOnCloseRawUDPConn(ret.onConnClose))
+	g.OnClose(wrapOnCloseRawUDPConn(ret.onRawUDPConnClose))
 	ret.g = g
 	// ret.messageHandleMap = []func(*rawUDPconn, *uptpHead, []byte){ret.handleV1Data}
 	ret.appHandleFunc[1] = ret.appid1handler
 	ret.appHandleFunc[2] = ret.appid2handler
+	ret.appHandleFunc[3] = ret.appid3handler
 	ret.psm = newPeerSockMgr(ret.queryAddrByID, ret.waitPeerConnectTimeout, ret.dialPeer)
 	return ret
 }
@@ -298,7 +333,7 @@ func (uc *Uptpc) connectServer() error {
 	var idBytes [12]byte
 	binary.LittleEndian.PutUint64(idBytes[:8], uint64(uc.info.Token))
 	binary.LittleEndian.PutUint32(idBytes[8:], uint32(uc.localPort))
-	err = uptpConn.sendMessage(0, 0, 1, idBytes[:])
+	err = uptpConn.SendMessage(0, 0, 1, idBytes[:])
 	if err != nil {
 		return err
 	}
@@ -316,19 +351,19 @@ func (uc *Uptpc) Stop() {
 type appHandler func(from int64, data []byte)
 
 func (uc *Uptpc) RegisterAppID(appID uint32, h appHandler) {
-	uc.appHandleFunc[appID] = func(u *rawUDPconn, uh *uptpHead, b []byte) {
+	uc.appHandleFunc[appID] = func(u uptpConn, uh *uptpHead, b []byte) {
 		h(uh.From, b)
 	}
 }
 
-func (uc *Uptpc) getPeerConn(cid int64) (*rawUDPconn, error) {
+func (uc *Uptpc) getPeerConn(cid int64) (uptpConn, error) {
 	if !uc.isRunning {
 		return nil, fmt.Errorf("uptp client is not running")
 	}
 	return uc.psm.getConn(cid)
 }
 
-func (uc *Uptpc) onConnClose(c *rawUDPconn, err error) {
+func (uc *Uptpc) onRawUDPConnClose(c *rawUDPconn, err error) {
 	if c.peerID == 0 {
 		if !c.isClient {
 			//ignore connect accept from other peer
@@ -353,17 +388,15 @@ func (uc *Uptpc) onConnClose(c *rawUDPconn, err error) {
 	}
 }
 
-func (uc *Uptpc) handleRecvData(c *rawUDPconn, head *uptpHead, data []byte) {
+func (uc *Uptpc) handleRawUDPData(c *rawUDPconn, head *uptpHead, data []byte) {
+	uc.handleV1Data(c, head, data)
+}
+
+func (uc *Uptpc) handleV1Data(c uptpConn, head *uptpHead, data []byte) {
 	if head.To != uc.cid {
 		//forward
 		return
 	}
-	// uc.messageHandleMap[head.Version-1](c, head, data)
-	uc.handleV1Data(c, head, data)
-}
-
-func (uc *Uptpc) handleV1Data(c *rawUDPconn, head *uptpHead, data []byte) {
-	// log.Printf("onV1Message: [%p, %v, %+v]", c, c.RemoteAddr().String(), *head)
 	f, ok := uc.appHandleFunc[head.AppID]
 	if !ok {
 		return
@@ -371,7 +404,7 @@ func (uc *Uptpc) handleV1Data(c *rawUDPconn, head *uptpHead, data []byte) {
 	f(c, head, data)
 }
 
-func (uc *Uptpc) appid1handler(c *rawUDPconn, head *uptpHead, data []byte) {
+func (uc *Uptpc) appid1handler(c uptpConn, head *uptpHead, data []byte) {
 	if head.Len == 0 {
 		return
 	}
@@ -385,13 +418,18 @@ func (uc *Uptpc) appid1handler(c *rawUDPconn, head *uptpHead, data []byte) {
 	uc.startHeartbeatLoop()
 }
 
-func (uc *Uptpc) appid2handler(c *rawUDPconn, head *uptpHead, data []byte) {
+func (uc *Uptpc) appid2handler(c uptpConn, head *uptpHead, data []byte) {
 	if len(data) < 8 {
 		return
 	}
 	id := int64(binary.LittleEndian.Uint64(data[:8]))
 	// log.Printf("onappid3Message: [%p, %v], %v, %v", c, c.RemoteAddr().String(), id, string(data[8:]))
 	go uc.psm.handleAddr(id, string(data[8:]))
+}
+
+func (uc *Uptpc) appid3handler(c uptpConn, head *uptpHead, data []byte) {
+	//noti conn peer id
+	uc.psm.addPeerConn(head.From, c)
 }
 
 func (uc *Uptpc) startHeartbeatLoop() {
@@ -435,18 +473,24 @@ func (uc *Uptpc) waitPeerConnectTimeout(peerID int64) {
 	uc.psm.deletePeerSock(peerID)
 }
 
-func (uc *Uptpc) dialPeer(peerID int64, peerAddr string) (*rawUDPconn, error) {
+func (uc *Uptpc) dialPeer(peerID int64, peerAddr string) (uptpConn, int64, error) {
 	log.Printf("start to dial peer: %d, %s", peerID, peerAddr)
+	uc.mux.RLock()
+	cid := uc.cid
+	uc.mux.RUnlock()
 	uptpConn, err := dialRawUDPConn(peerAddr, uc.g)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	uptpConn.peerID = peerID
 	uptpConn.conn.SetReadDeadline(time.Now().Add(time.Second * 30))
-	return uptpConn, nil
+	return uptpConn, cid, nil
 }
 
 func (uc *Uptpc) SendTo(peerID int64, appID uint32, content []byte) error {
+	uc.mux.RLock()
+	cid := uc.cid
+	uc.mux.RUnlock()
 	if peerID == 0 {
 		return fmt.Errorf("wrong peer id")
 	}
@@ -454,7 +498,7 @@ func (uc *Uptpc) SendTo(peerID int64, appID uint32, content []byte) error {
 	if err != nil {
 		return fmt.Errorf("try connect peer fail: %s", err)
 	}
-	err = conn.sendMessage(uc.cid, peerID, appID, content)
+	err = conn.SendMessage(cid, peerID, appID, content)
 	if err != nil {
 		return fmt.Errorf("send message fail: %s", err)
 	}

@@ -61,3 +61,7 @@ func UnmarshalUPTPMessage(message []byte) (*uptpHead, []byte, error) {
 	}
 	return &head, message[sizeUPTPHead:], nil
 }
+
+type uptpConn interface {
+	SendMessage(from, to int64, appID uint32, content []byte) error
+}

@@ -72,7 +72,7 @@ func (us *Uptps) handleV1Data(c *rawUDPconn, head *uptpHead, data []byte) {
 func (us *Uptps) appid1handler(c *rawUDPconn, head *uptpHead, data []byte) {
 	if head.From != 0 {
 		//hearbeat
-		c.sendMessage(0, head.From, 1, nil)
+		c.SendMessage(0, head.From, 1, nil)
 	}
 	if head.Len != 12 {
 		return
@@ -90,7 +90,7 @@ func (us *Uptps) appid1handler(c *rawUDPconn, head *uptpHead, data []byte) {
 	us.peerMap.Store(reqID, addr)
 	var idBytes [8]byte
 	binary.LittleEndian.PutUint64(idBytes[:], uint64(reqID))
-	err := c.sendMessage(0, 0, 1, idBytes[:])
+	err := c.SendMessage(0, 0, 1, idBytes[:])
 	if err != nil {
 		log.Println("send register response to client fail:", err)
 	}
@@ -106,7 +106,7 @@ func (us *Uptps) appid2handler(c *rawUDPconn, head *uptpHead, data []byte) {
 	}
 	retAddr := v.(string)
 	ret := append(data, []byte(retAddr)...)
-	err := c.sendMessage(0, head.From, 2, ret)
+	err := c.SendMessage(0, head.From, 2, ret)
 	if err != nil {
 		log.Println("send query response to client fail:", err)
 	}
