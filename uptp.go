@@ -49,19 +49,49 @@ func marshalUPTPMessageToBuffer(from, to int64, appID uint32, content []byte, bu
 	return nil
 }
 
-func UnmarshalUPTPMessage(message []byte) (*uptpHead, []byte, error) {
+func UnmarshalUPTPHead(message []byte) (*uptpHead, error) {
 	head := uptpHead{}
 	rd := bytes.NewReader(message)
 	err := binary.Read(rd, binary.LittleEndian, &head)
 	if err != nil {
-		return nil, nil, fmt.Errorf("read message header fail: %s", err)
+		return nil, fmt.Errorf("read message header fail: %s", err)
+	}
+	return &head, nil
+}
+
+func UnmarshalUPTPMessage(message []byte) (*uptpHead, []byte, error) {
+	head, err := UnmarshalUPTPHead(message)
+	if err != nil {
+		return nil, nil, err
 	}
 	if int(head.Len)+sizeUPTPHead != len(message) {
 		return nil, nil, fmt.Errorf("message len check fail")
 	}
-	return &head, message[sizeUPTPHead:], nil
+	return head, message[sizeUPTPHead:], nil
 }
 
 type uptpConn interface {
 	SendMessage(from, to int64, appID uint32, content []byte) error
+	SetPeerID(int64)
+	GetPeerID() int64
+	GetTimeStamp() int64
+	SetTimeStamp(ct int64)
+}
+
+type connTime int64
+
+func (t *connTime) GetTimeStamp() int64 {
+	return int64(*t)
+}
+
+func (t *connTime) SetTimeStamp(ct int64) {
+	*t = connTime(ct)
+}
+
+type UPTPInfo struct {
+	PeerID   int64       `json:"peerID"`
+	PublicIP string      `json:"publicIP"`
+	TCPPort  int         `json:"tcpPort"`
+	UDPPort  int         `json:"udpPort"`
+	Extra    interface{} `json:"extra"`
 }

@@ -13,6 +13,7 @@ import (
 )
 
 type rawUDPconn struct {
+	connTime
 	conn      net.Conn
 	checkSend uint32
 	checkRecv uint32
@@ -25,11 +26,9 @@ type rawUDPconn struct {
 }
 
 func newRawUDPConn(c net.Conn) *rawUDPconn {
-	buf := bytes.NewBuffer(nil)
-	buf.Grow(1600)
 	return &rawUDPconn{
 		conn:     c,
-		writeBuf: buf,
+		writeBuf: bytes.NewBuffer(make([]byte, 0, 1600)),
 	}
 }
 
@@ -68,6 +67,13 @@ func (uconn *rawUDPconn) SendMessage(from, to int64, appID uint32, content []byt
 	}
 	uconn.writeBuf.Reset()
 	return nil
+}
+
+func (uconn *rawUDPconn) GetPeerID() int64 {
+	return uconn.peerID
+}
+func (uconn *rawUDPconn) SetPeerID(id int64) {
+	uconn.peerID = id
 }
 
 func (uconn *rawUDPconn) close() error {

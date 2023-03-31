@@ -2,7 +2,7 @@ package uptp
 
 import (
 	"encoding/binary"
-	"fmt"
+	"encoding/json"
 	"log"
 	"net"
 	"sync"
@@ -74,41 +74,53 @@ func (us *Uptps) appid1handler(c *rawUDPconn, head *uptpHead, data []byte) {
 		//hearbeat
 		c.SendMessage(0, head.From, 1, nil)
 	}
-	if head.Len != 12 {
+	if head.Len == 0 {
 		return
 	}
 
-	reqID := int64(binary.LittleEndian.Uint64(data[:8]))
-	port := int(binary.LittleEndian.Uint32(data[8:]))
-	log.Printf("get client register: [%v], %v, %v", c.conn.RemoteAddr().String(), reqID, port)
-	if reqID == 0 {
-		reqID = us.snowNode.Generate().Int64()
+	var ui UPTPInfo
+	err := json.Unmarshal(data, &ui)
+	if err != nil {
+		log.Println("unmarshal uptp info fail: ", err)
+		return
 	}
-	c.peerID = reqID
-	ip := c.conn.RemoteAddr().(*net.UDPAddr).IP.String()
-	addr := fmt.Sprintf("[%s]:%d", ip, port)
-	us.peerMap.Store(reqID, addr)
+	log.Printf("get client register: [%v], %+v", c.conn.RemoteAddr().String(), ui)
+	if ui.PeerID == 0 {
+		ui.PeerID = us.snowNode.Generate().Int64()
+	}
+	c.peerID = ui.PeerID
+	ui.PublicIP = c.conn.RemoteAddr().(*net.UDPAddr).IP.String()
+	us.peerMap.Store(ui.PeerID, ui)
 	var idBytes [8]byte
-	binary.LittleEndian.PutUint64(idBytes[:], uint64(reqID))
-	err := c.SendMessage(0, 0, 1, idBytes[:])
+	binary.LittleEndian.PutUint64(idBytes[:], uint64(ui.PeerID))
+	err = c.SendMessage(0, 0, 1, idBytes[:])
 	if err != nil {
 		log.Println("send register response to client fail:", err)
 	}
 }
 
 func (us *Uptps) appid2handler(c *rawUDPconn, head *uptpHead, data []byte) {
-	id := int64(binary.LittleEndian.Uint64(data))
-	log.Printf("get query request from: [%v,%v], %v", c.conn.RemoteAddr().String(), head.From, id)
-	v, ok := us.peerMap.Load(id)
+	var ui UPTPInfo
+	err := json.Unmarshal(data, &ui)
+	if err != nil {
+		log.Println("[uptps:appid2handler] unmarshal request fail:", err)
+	}
+	log.Printf("get query request from: [%v,%v], %+v", c.conn.RemoteAddr().String(), head.From, ui)
+	v, ok := us.peerMap.Load(ui.PeerID)
 	if !ok {
 		//write no found
 		return
 	}
-	retAddr := v.(string)
-	ret := append(data, []byte(retAddr)...)
-	err := c.SendMessage(0, head.From, 2, ret)
+	retInfo := v.(UPTPInfo)
+	retInfo.Extra = ui.Extra
+	peerInfo, err := json.Marshal(retInfo)
 	if err != nil {
-		log.Println("send query response to client fail:", err)
+		log.Println("[uptps:appid2handler] marshal peer info fail:", err)
+		return
+	}
+	err = c.SendMessage(0, head.From, 2, peerInfo)
+	if err != nil {
+		log.Println("[uptps:appid2handler] send query response to client fail:", err)
 	}
 	return
 }

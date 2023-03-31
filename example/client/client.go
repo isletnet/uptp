@@ -74,7 +74,7 @@ func main() {
 
 func testLoop(uc *uptp.Uptpc, peerID int64) {
 	for {
-		err := uc.SendTo(peerID, 666, []byte("6666666666666666666666666666666"))
+		err := uc.SendToTCP(peerID, 666, []byte("6666666666666666666666666666666"))
 		if err != nil {
 			log.Println("send 666 fail:", err)
 		}
