@@ -392,6 +392,7 @@ func (uc *Uptpc) Stop() {
 type appHandler func(from int64, data []byte)
 
 func (uc *Uptpc) RegisterAppID(appID uint32, h appHandler) {
+	log.Printf("register app: %d", appID)
 	uc.appHandleFunc[appID] = func(u uptpConn, uh *uptpHead, b []byte) {
 		h(uh.From, b)
 	}
@@ -462,6 +463,7 @@ func (uc *Uptpc) handleRawTCPData(c *rawTCPConn, head *uptpHead, data []byte) {
 }
 
 func (uc *Uptpc) handleV1Data(c uptpConn, head *uptpHead, data []byte) {
+	log.Printf("handle v1 data: %+v", head)
 	if head.To != uc.cid {
 		//forward
 		return
@@ -594,7 +596,6 @@ func (uc *Uptpc) dialPeerTCP(peerID int64, peerAddr string) (uptpConn, int64, er
 	}
 	uptpConn.peerID = peerID
 	uptpConn.conn.SetReadDeadline(time.Now().Add(time.Second * 30))
-	log.Printf("dial peer tcp success: %d, %s, %+v", peerID, peerAddr, uptpConn)
 	return uptpConn, cid, nil
 }
 
