@@ -16,12 +16,11 @@ import (
 type NptpcConfig struct {
 	ServerAddr string `yaml:"server_address"`
 	ListenPort int    `yaml:"listen_port,omitempty"`
-	Token      int64  `yaml:"token"`
 }
 
 type peerSock struct {
-	peerID  int64
-	ct      int64
+	peerID uint64
+	// ct      int64
 	mux     sync.Mutex
 	cond    *sync.Cond
 	conn    uptpConn
@@ -31,17 +30,17 @@ type peerSock struct {
 
 type peerSockMgr struct {
 	mux     sync.Mutex
-	cache   map[int64]*peerSock
-	reqCB   func(int64, string) error
-	toCB    func(int64)
-	addrCB  func(int64, string) (uptpConn, int64, error)
+	cache   map[uint64]*peerSock
+	reqCB   func(uint64, string) error
+	toCB    func(uint64)
+	addrCB  func(uint64, string) (uptpConn, uint64, error)
 	network string
 }
 
-func newPeerSockMgr(netwrok string, reqCB func(int64, string) error, toCB func(int64), addrCB func(int64, string) (uptpConn, int64, error)) *peerSockMgr {
+func newPeerSockMgr(netwrok string, reqCB func(uint64, string) error, toCB func(uint64), addrCB func(uint64, string) (uptpConn, uint64, error)) *peerSockMgr {
 	ps := peerSockMgr{
 		network: netwrok,
-		cache:   make(map[int64]*peerSock),
+		cache:   make(map[uint64]*peerSock),
 		reqCB:   reqCB,
 		toCB:    toCB,
 		addrCB:  addrCB,
@@ -49,7 +48,7 @@ func newPeerSockMgr(netwrok string, reqCB func(int64, string) error, toCB func(i
 	return &ps
 }
 
-func (pm *peerSockMgr) getConn(peerID int64) (uptpConn, error) {
+func (pm *peerSockMgr) getConn(peerID uint64) (uptpConn, error) {
 	pm.mux.Lock()
 	ps, ok := pm.cache[peerID]
 	if !ok {
@@ -67,7 +66,7 @@ func (pm *peerSockMgr) getConn(peerID int64) (uptpConn, error) {
 	return ps.getConn(pm.toCB)
 }
 
-func (pm *peerSockMgr) addPeerConn(peerID int64, conn uptpConn) {
+func (pm *peerSockMgr) addPeerConn(peerID uint64, conn uptpConn) {
 	pm.mux.Lock()
 	defer pm.mux.Unlock()
 	ps, ok := pm.cache[peerID]
@@ -82,7 +81,7 @@ func (pm *peerSockMgr) addPeerConn(peerID int64, conn uptpConn) {
 	ps.stopWait()
 }
 
-func (pm *peerSockMgr) deletePeerSock(peerID int64) {
+func (pm *peerSockMgr) deletePeerSock(peerID uint64) {
 	pm.mux.Lock()
 	_, ok := pm.cache[peerID]
 	if ok {
@@ -100,7 +99,7 @@ func (pm *peerSockMgr) clearPeerSock() {
 	pm.mux.Unlock()
 }
 
-func (pm *peerSockMgr) handleAddr(peerID int64, peerAddr string) {
+func (pm *peerSockMgr) handleAddr(peerID uint64, peerAddr string) {
 	if peerID == 0 {
 		return
 	}
@@ -128,7 +127,7 @@ func (pm *peerSockMgr) handleAddr(peerID int64, peerAddr string) {
 	c.SendMessage(cid, ps.peerID, 3, nil)
 }
 
-func newPeerSock(id int64) *peerSock {
+func newPeerSock(id uint64) *peerSock {
 	return &peerSock{
 		peerID: id,
 	}
@@ -147,7 +146,7 @@ func (ps *peerSock) setConnect(conn uptpConn) {
 	ps.ready = conn != nil
 }
 
-func (ps *peerSock) getConn(tocb func(int64)) (uptpConn, error) {
+func (ps *peerSock) getConn(tocb func(uint64)) (uptpConn, error) {
 	ps.mux.Lock()
 	defer ps.mux.Unlock()
 	if ps.ready {
@@ -194,19 +193,18 @@ func (ps *peerSock) stopWait() {
 	ps.cond.Broadcast()
 }
 
-type connCheckItem struct {
-	check  uint32
-	peerID int64
-}
+// type connCheckItem struct {
+// 	check  uint32
+// 	peerID int64
+// }
 
 type Uptpc struct {
 	g             *nbio.Gopher
 	tcpEngine     *nbio.Gopher
-	cache         sync.Map
 	appHandleFunc map[uint32]func(uptpConn, *uptpHead, []byte)
 	// messageHandleMap []func(*rawUDPconn, *uptpHead, []byte)
 	serverConn       uptpConn
-	cid              int64
+	cid              uint64
 	mux              sync.RWMutex
 	heartbeatTK      *time.Ticker
 	heartbeatStopSig chan struct{}
@@ -217,33 +215,29 @@ type Uptpc struct {
 	tcpPort          int
 	isRunning        bool
 
-	idCh chan int64
+	// idCh chan uint64
 }
 
-func (uc *Uptpc) GetNptpCID() int64 {
-	var ret int64
-	select {
-	case ret = <-uc.idCh:
-	case <-time.After(time.Second * 5):
-		return 0
-	}
-	if ret == 0 {
-		return 0
-	}
-	select {
-	case uc.idCh <- ret:
-	default:
-	}
-	return ret
-}
+// func (uc *Uptpc) GetNptpCID() uint64 {
+// 	var ret uint64
+// 	select {
+// 	case ret = <-uc.idCh:
+// 	case <-time.After(time.Second * 5):
+// 		return 0
+// 	}
+// 	if ret == 0 {
+// 		return 0
+// 	}
+// 	select {
+// 	case uc.idCh <- ret:
+// 	default:
+// 	}
+// 	return ret
+// }
 
-func (uc *Uptpc) setConnect(conn uptpConn, cid int64) {
-	if cid != uc.info.Token {
-		uc.info.Token = cid
-	}
+func (uc *Uptpc) setConnect(conn uptpConn) {
 	uc.mux.Lock()
 	uc.serverConn = conn
-	uc.cid = cid
 	uc.mux.Unlock()
 }
 
@@ -263,13 +257,13 @@ func (uc *Uptpc) sendMessageToServer(appID uint32, data []byte) error {
 	return nil
 }
 
-func NewUPTPClient(nc NptpcConfig) *Uptpc {
+func NewUPTPClient(name string, nc NptpcConfig) *Uptpc {
 	h := make(map[uint32]func(uptpConn, *uptpHead, []byte))
 	ret := &Uptpc{
 		appHandleFunc:    h,
 		info:             &nc,
 		heartbeatStopSig: make(chan struct{}, 1),
-		idCh:             make(chan int64, 1),
+		// idCh:             make(chan uint64, 1),
 	}
 	g := nbio.NewGopher(nbio.Config{
 		Network:            "udp",
@@ -300,6 +294,7 @@ func NewUPTPClient(nc NptpcConfig) *Uptpc {
 	ret.appHandleFunc[3] = ret.appid3handler
 	ret.psm = newPeerSockMgr("udp", ret.queryAddrByID, ret.waitPeerConnectTimeout, ret.dialPeerUDP)
 	ret.psmTCP = newPeerSockMgr("tcp", ret.queryAddrByID, ret.waitPeerConnectTimeoutTCP, ret.dialPeerTCP)
+	ret.cid = GetIDByName(name)
 	return ret
 }
 
@@ -364,7 +359,7 @@ func (uc *Uptpc) connectServer() error {
 		return err
 	}
 	ui := UPTPInfo{
-		PeerID:  uc.info.Token,
+		PeerID:  uc.cid,
 		TCPPort: uc.tcpPort,
 		UDPPort: uc.udpPort,
 	}
@@ -389,7 +384,7 @@ func (uc *Uptpc) Stop() {
 	uc.g.Wait()
 }
 
-type appHandler func(from int64, data []byte)
+type appHandler func(from uint64, data []byte)
 
 func (uc *Uptpc) RegisterAppID(appID uint32, h appHandler) {
 	log.Printf("register app: %d", appID)
@@ -400,13 +395,13 @@ func (uc *Uptpc) RegisterAppID(appID uint32, h appHandler) {
 
 func (uc *Uptpc) RegisterPeerDisconnect() {}
 
-func (uc *Uptpc) getPeerConn(cid int64) (uptpConn, error) {
+func (uc *Uptpc) getPeerConn(cid uint64) (uptpConn, error) {
 	if !uc.isRunning {
 		return nil, fmt.Errorf("uptp client is not running")
 	}
 	return uc.psm.getConn(cid)
 }
-func (uc *Uptpc) getPeerConnTCP(cid int64) (uptpConn, error) {
+func (uc *Uptpc) getPeerConnTCP(cid uint64) (uptpConn, error) {
 	if !uc.isRunning {
 		return nil, fmt.Errorf("uptp client is not running")
 	}
@@ -423,7 +418,6 @@ func (uc *Uptpc) onRawUDPConnClose(c *rawUDPconn, err error) {
 			log.Println("server connect close: ", err)
 		}
 		uc.serverConn = nil
-		uc.cid = 0
 		uc.StopHeartbeat()
 
 		if uc.isRunning {
@@ -450,7 +444,7 @@ func (uc *Uptpc) onRawTCPConnClose(c *rawTCPConn, err error) {
 	uc.onUPTPConnClose(c.peerID)
 }
 
-func (uc *Uptpc) onUPTPConnClose(peerID int64) {
+func (uc *Uptpc) onUPTPConnClose(peerID uint64) {
 
 }
 
@@ -463,7 +457,7 @@ func (uc *Uptpc) handleRawTCPData(c *rawTCPConn, head *uptpHead, data []byte) {
 }
 
 func (uc *Uptpc) handleV1Data(c uptpConn, head *uptpHead, data []byte) {
-	log.Printf("handle v1 data: %+v", head)
+	// log.Printf("handle v1 data: %+v", head)
 	if head.To != uc.cid {
 		//forward
 		return
@@ -479,13 +473,13 @@ func (uc *Uptpc) appid1handler(c uptpConn, head *uptpHead, data []byte) {
 	if head.Len == 0 {
 		return
 	}
-	id := int64(binary.LittleEndian.Uint64(data))
-	// log.Printf("onappid1Message: [%p, %v], %v", c, c.RemoteAddr().String(), id)
-	uc.setConnect(c, id)
-	select {
-	case uc.idCh <- id:
-	default:
-	}
+	id := binary.LittleEndian.Uint64(data)
+	log.Println("[Uptpc:appid1handler] login success", id)
+	uc.setConnect(c)
+	// select {
+	// case uc.idCh <- id:
+	// default:
+	// }
 	uc.startHeartbeatLoop()
 }
 
@@ -496,7 +490,7 @@ func (uc *Uptpc) appid2handler(c uptpConn, head *uptpHead, data []byte) {
 	var ui UPTPInfo
 	err := json.Unmarshal(data, &ui)
 	if err != nil {
-		log.Println("[Uptpc:onappid3Message] unmarshal uptp info fail: ", err)
+		log.Println("[Uptpc:appid2handler] unmarshal uptp info fail: ", err)
 		return
 	}
 
@@ -548,7 +542,7 @@ func (uc *Uptpc) sendHeartbeatToServer() {
 	}
 }
 
-func (uc *Uptpc) queryAddrByID(id int64, network string) error {
+func (uc *Uptpc) queryAddrByID(id uint64, network string) error {
 	log.Println("start query addr of: ", id)
 	var ui UPTPInfo
 	ui.Extra = network
@@ -564,15 +558,15 @@ func (uc *Uptpc) queryAddrByID(id int64, network string) error {
 	return nil
 }
 
-func (uc *Uptpc) waitPeerConnectTimeout(peerID int64) {
+func (uc *Uptpc) waitPeerConnectTimeout(peerID uint64) {
 	uc.psm.deletePeerSock(peerID)
 }
 
-func (uc *Uptpc) waitPeerConnectTimeoutTCP(peerID int64) {
+func (uc *Uptpc) waitPeerConnectTimeoutTCP(peerID uint64) {
 	uc.psmTCP.deletePeerSock(peerID)
 }
 
-func (uc *Uptpc) dialPeerUDP(peerID int64, peerAddr string) (uptpConn, int64, error) {
+func (uc *Uptpc) dialPeerUDP(peerID uint64, peerAddr string) (uptpConn, uint64, error) {
 	log.Printf("start to dial peer udp: %d, %s", peerID, peerAddr)
 	uc.mux.RLock()
 	cid := uc.cid
@@ -585,7 +579,7 @@ func (uc *Uptpc) dialPeerUDP(peerID int64, peerAddr string) (uptpConn, int64, er
 	uptpConn.conn.SetReadDeadline(time.Now().Add(time.Second * 30))
 	return uptpConn, cid, nil
 }
-func (uc *Uptpc) dialPeerTCP(peerID int64, peerAddr string) (uptpConn, int64, error) {
+func (uc *Uptpc) dialPeerTCP(peerID uint64, peerAddr string) (uptpConn, uint64, error) {
 	log.Printf("start to dial peer tcp: %d, %s", peerID, peerAddr)
 	uc.mux.RLock()
 	cid := uc.cid
@@ -599,7 +593,7 @@ func (uc *Uptpc) dialPeerTCP(peerID int64, peerAddr string) (uptpConn, int64, er
 	return uptpConn, cid, nil
 }
 
-func (uc *Uptpc) SendTo(peerID int64, appID uint32, content []byte) error {
+func (uc *Uptpc) SendTo(peerID uint64, appID uint32, content []byte) error {
 	uc.mux.RLock()
 	cid := uc.cid
 	uc.mux.RUnlock()
@@ -617,7 +611,7 @@ func (uc *Uptpc) SendTo(peerID int64, appID uint32, content []byte) error {
 	return nil
 }
 
-func (uc *Uptpc) SendToTCP(peerID int64, appID uint32, content []byte) error {
+func (uc *Uptpc) SendToTCP(peerID uint64, appID uint32, content []byte) error {
 	uc.mux.RLock()
 	cid := uc.cid
 	uc.mux.RUnlock()

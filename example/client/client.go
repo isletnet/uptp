@@ -12,8 +12,6 @@ import (
 
 type conf struct {
 	uptp.NptpcConfig
-
-	Peer int64 `yaml:"peer"`
 }
 
 func loadNptpcConfig(p string) (*conf, error) {
@@ -32,19 +30,19 @@ func loadNptpcConfig(p string) (*conf, error) {
 	return nc, nil
 }
 
-func saveNptpcConfig(nc *conf, p string) error {
-	buf, err := yaml.Marshal(nc)
-	if err != nil {
-		return err
-	}
-	err = ioutil.WriteFile(p, buf, 644)
-	if err != nil {
-		return err
-	}
-	return nil
-}
+// func saveNptpcConfig(nc *conf, p string) error {
+// 	buf, err := yaml.Marshal(nc)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	err = ioutil.WriteFile(p, buf, 644)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	return nil
+// }
 
-func handle666(from int64, data []byte) {
+func handle666(from uint64, data []byte) {
 	log.Println("recv 666: ", string(data))
 }
 func main() {
@@ -52,27 +50,28 @@ func main() {
 	if err != nil {
 		log.Println("load nptp client config fail: ", err)
 	}
-	uc := uptp.NewUPTPClient(nc.NptpcConfig)
+	uc := uptp.NewUPTPClient(os.Args[1], nc.NptpcConfig)
 
 	err = uc.Start()
 	if err != nil {
 		log.Panic(err)
 	}
 	uc.RegisterAppID(666, handle666)
-	for {
-		id := uc.GetNptpCID()
-		if id == 0 {
-			continue
-		}
-		nc.NptpcConfig.Token = id
-		saveNptpcConfig(nc, "config.yml")
-		break
-	}
-	testLoop(uc, nc.Peer)
+	// for {
+	// 	id := uc.GetNptpCID()
+	// 	if id == 0 {
+	// 		continue
+	// 	}
+	// 	nc.NptpcConfig.Token = id
+	// 	saveNptpcConfig(nc, "config.yml")
+	// 	break
+	// }
+	testLoop(uc, os.Args[2])
 	uc.Stop()
 }
 
-func testLoop(uc *uptp.Uptpc, peerID int64) {
+func testLoop(uc *uptp.Uptpc, peer string) {
+	peerID := uptp.GetIDByName(peer)
 	for {
 		err := uc.SendToTCP(peerID, 666, []byte("6666666666666666666666666666666"))
 		if err != nil {

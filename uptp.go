@@ -4,18 +4,19 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"hash/crc64"
 )
 
 type uptpHead struct {
-	From  int64
-	To    int64
+	From  uint64
+	To    uint64
 	Len   uint32
 	AppID uint32
 }
 
 var sizeUPTPHead = binary.Size(uptpHead{})
 
-func marshalUPTPMessage(from, to int64, appID uint32, content []byte) ([]byte, error) {
+func marshalUPTPMessage(from, to uint64, appID uint32, content []byte) ([]byte, error) {
 	head := uptpHead{
 		Len:   uint32(len(content)),
 		From:  from,
@@ -31,7 +32,7 @@ func marshalUPTPMessage(from, to int64, appID uint32, content []byte) ([]byte, e
 	return writeBytes, nil
 }
 
-func marshalUPTPMessageToBuffer(from, to int64, appID uint32, content []byte, buf *bytes.Buffer) error {
+func marshalUPTPMessageToBuffer(from, to uint64, appID uint32, content []byte, buf *bytes.Buffer) error {
 	head := uptpHead{
 		Len:   uint32(len(content)),
 		From:  from,
@@ -71,9 +72,9 @@ func UnmarshalUPTPMessage(message []byte) (*uptpHead, []byte, error) {
 }
 
 type uptpConn interface {
-	SendMessage(from, to int64, appID uint32, content []byte) error
-	SetPeerID(int64)
-	GetPeerID() int64
+	SendMessage(from, to uint64, appID uint32, content []byte) error
+	SetPeerID(uint64)
+	GetPeerID() uint64
 	GetTimeStamp() int64
 	SetTimeStamp(ct int64)
 }
@@ -89,9 +90,13 @@ func (t *connTime) SetTimeStamp(ct int64) {
 }
 
 type UPTPInfo struct {
-	PeerID   int64       `json:"peerID"`
+	PeerID   uint64      `json:"peerID"`
 	PublicIP string      `json:"publicIP"`
 	TCPPort  int         `json:"tcpPort"`
 	UDPPort  int         `json:"udpPort"`
 	Extra    interface{} `json:"extra"`
+}
+
+func GetIDByName(name string) uint64 {
+	return crc64.Checksum([]byte(name), crc64.MakeTable(crc64.ISO))
 }

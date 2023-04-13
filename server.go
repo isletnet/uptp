@@ -8,13 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bwmarrin/snowflake"
 	"github.com/lesismal/nbio"
 )
 
 type Uptps struct {
-	peerMap  sync.Map
-	snowNode *snowflake.Node
+	peerMap sync.Map
 
 	// messageHandleMap []func(*rawUDPconn, *uptpHead, []byte)
 	appHandleFunc map[uint32]func(*rawUDPconn, *uptpHead, []byte)
@@ -24,7 +22,6 @@ type Uptps struct {
 
 type NptpsConfig struct {
 	Udp6Addr string
-	SnowNode int64
 }
 
 func NewUPTPServer(nc NptpsConfig) *Uptps {
@@ -37,8 +34,6 @@ func NewUPTPServer(nc NptpsConfig) *Uptps {
 		UDPReadTimeout:     time.Second * 30,
 		ListenUDP:          ret.funListenUDP,
 	})
-	sn, _ := snowflake.NewNode(nc.SnowNode)
-	ret.snowNode = sn
 	ret.nbioEngine = g
 	ret.nbioEngine.OnData(wrapOnDataRawUDPConn(ret.handleRecvData, nil))
 	ret.nbioEngine.OnOpen(wrapOnOpenRawUDPConn(func(u *rawUDPconn) {
@@ -86,14 +81,15 @@ func (us *Uptps) appid1handler(c *rawUDPconn, head *uptpHead, data []byte) {
 	}
 	log.Printf("get client register: [%v], %+v", c.conn.RemoteAddr().String(), ui)
 	if ui.PeerID == 0 {
-		ui.PeerID = us.snowNode.Generate().Int64()
+		log.Println("get wrong uptp info fail")
+		return
 	}
 	c.peerID = ui.PeerID
 	ui.PublicIP = c.conn.RemoteAddr().(*net.UDPAddr).IP.String()
 	us.peerMap.Store(ui.PeerID, ui)
 	var idBytes [8]byte
 	binary.LittleEndian.PutUint64(idBytes[:], uint64(ui.PeerID))
-	err = c.SendMessage(0, 0, 1, idBytes[:])
+	err = c.SendMessage(0, ui.PeerID, 1, idBytes[:])
 	if err != nil {
 		log.Println("send register response to client fail:", err)
 	}
@@ -122,7 +118,6 @@ func (us *Uptps) appid2handler(c *rawUDPconn, head *uptpHead, data []byte) {
 	if err != nil {
 		log.Println("[uptps:appid2handler] send query response to client fail:", err)
 	}
-	return
 }
 
 func (us *Uptps) funListenUDP(network string, laddr *net.UDPAddr) (*net.UDPConn, error) {

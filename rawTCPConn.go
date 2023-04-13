@@ -19,7 +19,7 @@ type rawTCPConn struct {
 	checkSend uint32
 	checkRecv uint32
 	isClient  bool
-	peerID    int64
+	peerID    uint64
 	rspTime   int64
 
 	handshakeStatus bool
@@ -51,7 +51,7 @@ func (rtc *rawTCPConn) readUPTPHead(data []byte) (*uptpHead, uint32, error) {
 	return head, check, nil
 }
 
-func (rtc *rawTCPConn) SendMessage(from, to int64, appID uint32, content []byte) error {
+func (rtc *rawTCPConn) SendMessage(from, to uint64, appID uint32, content []byte) error {
 	// if !uconn.ready && appID == 0 {
 	// 	return fmt.Errorf("uptp connect is not ready to send message")
 	// }
@@ -73,10 +73,10 @@ func (rtc *rawTCPConn) SendMessage(from, to int64, appID uint32, content []byte)
 	return nil
 }
 
-func (rtc *rawTCPConn) GetPeerID() int64 {
+func (rtc *rawTCPConn) GetPeerID() uint64 {
 	return rtc.peerID
 }
-func (rtc *rawTCPConn) SetPeerID(id int64) {
+func (rtc *rawTCPConn) SetPeerID(id uint64) {
 	rtc.peerID = id
 }
 

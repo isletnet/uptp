@@ -7,7 +7,6 @@ import (
 func main() {
 	us := uptp.NewUPTPServer(uptp.NptpsConfig{
 		Udp6Addr: "[::]:1929",
-		SnowNode: 1,
 	})
 
 	us.Start()

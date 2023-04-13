@@ -17,7 +17,7 @@ type rawUDPconn struct {
 	conn      net.Conn
 	checkSend uint32
 	checkRecv uint32
-	peerID    int64
+	peerID    uint64
 	isClient  bool
 	rspTime   int64
 
@@ -47,7 +47,7 @@ func (uconn *rawUDPconn) checkMessage(data []byte) (*uptpHead, uint32, []byte, e
 	return head, check, content, nil
 }
 
-func (uconn *rawUDPconn) SendMessage(from, to int64, appID uint32, content []byte) error {
+func (uconn *rawUDPconn) SendMessage(from, to uint64, appID uint32, content []byte) error {
 	// if !uconn.ready && appID == 0 {
 	// 	return fmt.Errorf("uptp connect is not ready to send message")
 	// }
@@ -69,10 +69,10 @@ func (uconn *rawUDPconn) SendMessage(from, to int64, appID uint32, content []byt
 	return nil
 }
 
-func (uconn *rawUDPconn) GetPeerID() int64 {
+func (uconn *rawUDPconn) GetPeerID() uint64 {
 	return uconn.peerID
 }
-func (uconn *rawUDPconn) SetPeerID(id int64) {
+func (uconn *rawUDPconn) SetPeerID(id uint64) {
 	uconn.peerID = id
 }
 
