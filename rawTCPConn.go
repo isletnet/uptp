@@ -167,8 +167,8 @@ func wrapOnDataRawTCPConn(h func(*rawTCPConn, *uptpHead, []byte), handshakeCheck
 			return
 		}
 		c.SetReadDeadline(time.Now().Add(time.Second * 30))
-		bufLen := rtc.inputBuf.Len()
 		if !rtc.handshakeComplete() {
+			bufLen := rtc.inputBuf.Len()
 			//handshake server
 			if bufLen < 4 {
 				//handshake len 4
@@ -185,40 +185,45 @@ func wrapOnDataRawTCPConn(h func(*rawTCPConn, *uptpHead, []byte), handshakeCheck
 			rtc.handshakeStatus = true
 			return
 		}
-		if rtc.curHead == nil {
-			//read head
-			if bufLen < sizeUPTPHead+4 {
+		var setDeadline bool
+		for {
+			bufLen := rtc.inputBuf.Len()
+			if rtc.curHead == nil {
+				//read head
+				if bufLen < sizeUPTPHead+4 {
+					return
+				}
+				head, check, err := rtc.readUPTPHead(rtc.inputBuf.Next(sizeUPTPHead + 4))
+				if err != nil {
+					c.CloseWithError(fmt.Errorf("read uptp head fail:%s", err))
+					return
+				}
+				if check != rtc.checkRecv {
+					c.CloseWithError(fmt.Errorf("message check fail"))
+					return
+				}
+				if head.Len > 64*1024*1024 {
+					c.CloseWithError(fmt.Errorf("check head fail: message len to large"))
+					return
+				}
+				rtc.curHead = head
+				bufLen = rtc.inputBuf.Len()
+			}
+			if !setDeadline && !rtc.isClient {
+				setDeadline = true
+				tn := time.Now().Unix()
+				if tn-rtc.rspTime > 10 {
+					rtc.SendMessage(0, rtc.curHead.From, 1, nil)
+					rtc.rspTime = tn
+				}
+			}
+			if bufLen < int(rtc.curHead.Len) {
 				return
 			}
-			head, check, err := rtc.readUPTPHead(rtc.inputBuf.Next(sizeUPTPHead + 4))
-			if err != nil {
-				c.CloseWithError(fmt.Errorf("read uptp head fail:%s", err))
-				return
-			}
-			if check != rtc.checkRecv {
-				c.CloseWithError(fmt.Errorf("message check fail"))
-				return
-			}
-			if head.Len > 64*1024*1024 {
-				c.CloseWithError(fmt.Errorf("check head fail: message len to large"))
-				return
-			}
-			rtc.curHead = head
-			bufLen = rtc.inputBuf.Len()
+			uptpData := make([]byte, rtc.curHead.Len)
+			copy(uptpData, rtc.inputBuf.Next(int(rtc.curHead.Len)))
+			h(rtc, rtc.curHead, uptpData)
+			rtc.curHead = nil
 		}
-		if !rtc.isClient {
-			tn := time.Now().Unix()
-			if tn-rtc.rspTime > 10 {
-				rtc.SendMessage(0, rtc.curHead.From, 1, nil)
-				rtc.rspTime = tn
-			}
-		}
-		if bufLen < int(rtc.curHead.Len) {
-			return
-		}
-		uptpData := make([]byte, rtc.curHead.Len)
-		copy(uptpData, rtc.inputBuf.Next(int(rtc.curHead.Len)))
-		h(rtc, rtc.curHead, uptpData)
-		rtc.curHead = nil
 	}
 }
