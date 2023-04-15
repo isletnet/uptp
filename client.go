@@ -48,7 +48,7 @@ func newPeerSockMgr(netwrok string, reqCB func(uint64, string) error, toCB func(
 	return &ps
 }
 
-func (pm *peerSockMgr) getConn(peerID uint64) (uptpConn, error) {
+func (pm *peerSockMgr) getConn(peerID uint64, notBlock bool) (uptpConn, error) {
 	pm.mux.Lock()
 	ps, ok := pm.cache[peerID]
 	if !ok {
@@ -63,7 +63,7 @@ func (pm *peerSockMgr) getConn(peerID uint64) (uptpConn, error) {
 	}
 	pm.mux.Unlock()
 
-	return ps.getConn(pm.toCB)
+	return ps.getConn(pm.toCB, notBlock)
 }
 
 func (pm *peerSockMgr) addPeerConn(peerID uint64, conn uptpConn) {
@@ -146,11 +146,14 @@ func (ps *peerSock) setConnect(conn uptpConn) {
 	ps.ready = conn != nil
 }
 
-func (ps *peerSock) getConn(tocb func(uint64)) (uptpConn, error) {
+func (ps *peerSock) getConn(tocb func(uint64), notBlock bool) (uptpConn, error) {
 	ps.mux.Lock()
 	defer ps.mux.Unlock()
 	if ps.ready {
 		return ps.conn, nil
+	}
+	if notBlock {
+		return nil, fmt.Errorf("connect not ready")
 	}
 	var stat = 0
 	if ps.cond == nil {
@@ -395,17 +398,17 @@ func (uc *Uptpc) RegisterAppID(appID uint32, h appHandler) {
 
 func (uc *Uptpc) RegisterPeerDisconnect() {}
 
-func (uc *Uptpc) getPeerConn(cid uint64) (uptpConn, error) {
+func (uc *Uptpc) getPeerConn(cid uint64, notBlock bool) (uptpConn, error) {
 	if !uc.isRunning {
 		return nil, fmt.Errorf("uptp client is not running")
 	}
-	return uc.psm.getConn(cid)
+	return uc.psm.getConn(cid, notBlock)
 }
-func (uc *Uptpc) getPeerConnTCP(cid uint64) (uptpConn, error) {
+func (uc *Uptpc) getPeerConnTCP(cid uint64, notBlock bool) (uptpConn, error) {
 	if !uc.isRunning {
 		return nil, fmt.Errorf("uptp client is not running")
 	}
-	return uc.psmTCP.getConn(cid)
+	return uc.psmTCP.getConn(cid, notBlock)
 }
 
 func (uc *Uptpc) onRawUDPConnClose(c *rawUDPconn, err error) {
@@ -591,14 +594,14 @@ func (uc *Uptpc) dialPeerTCP(peerID uint64, peerAddr string) (uptpConn, uint64, 
 	return uptpConn, cid, nil
 }
 
-func (uc *Uptpc) SendTo(peerID uint64, appID uint32, content []byte) error {
+func (uc *Uptpc) SendTo(peerID uint64, appID uint32, content []byte, notBlock bool) error {
 	uc.mux.RLock()
 	cid := uc.cid
 	uc.mux.RUnlock()
 	if peerID == 0 {
 		return fmt.Errorf("wrong peer id")
 	}
-	conn, err := uc.getPeerConn(peerID)
+	conn, err := uc.getPeerConn(peerID, notBlock)
 	if err != nil {
 		return fmt.Errorf("try connect peer fail: %s", err)
 	}
@@ -609,14 +612,14 @@ func (uc *Uptpc) SendTo(peerID uint64, appID uint32, content []byte) error {
 	return nil
 }
 
-func (uc *Uptpc) SendToTCP(peerID uint64, appID uint32, content []byte) error {
+func (uc *Uptpc) SendToTCP(peerID uint64, appID uint32, content []byte, notBlock bool) error {
 	uc.mux.RLock()
 	cid := uc.cid
 	uc.mux.RUnlock()
 	if peerID == 0 {
 		return fmt.Errorf("wrong peer id")
 	}
-	conn, err := uc.getPeerConnTCP(peerID)
+	conn, err := uc.getPeerConnTCP(peerID, notBlock)
 	if err != nil {
 		return fmt.Errorf("try connect peer fail: %s", err)
 	}
