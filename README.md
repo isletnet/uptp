@@ -1,2 +1,2 @@
 # uptp
-universal p2p protocol
+universal p2p framework
