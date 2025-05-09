@@ -52,7 +52,9 @@ func main() {
 	if rc.verbose {
 		lm = logger.LogFileAndConsole
 	}
-
+	if rc.trial {
+		gwIns().setTrialMod()
+	}
 	if err := gwIns().run(gatewayConf{
 		logMod:   lm,
 		logLevel: rc.logLevel,

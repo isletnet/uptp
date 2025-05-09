@@ -122,5 +122,8 @@ func (pam *PortmapResMgr) savePortmap() error {
 }
 
 type PortmapAppHandshake struct {
-	ResID uint64 `json:"res_id"`
+	ResID      uint64 `json:"res_id"`
+	Network    string `json:"network"`
+	TargetAddr string `json:"target_addr"`
+	TargetPort int    `json:"target_port"`
 }

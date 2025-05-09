@@ -15,7 +15,7 @@ import (
 
 func agentRun(workDir string) error {
 	resMgr := appMgr{}
-	err := resMgr.loadAppFromFile(filepath.Join(workDir, "res.json"))
+	err := resMgr.loadAppFromFile(filepath.Join(workDir, "app.json"))
 	if err != nil {
 		return err
 	}
@@ -49,13 +49,16 @@ func agentRun(workDir string) error {
 
 	pmEngine := portmap.NewPortMap(pe.Libp2pHost())
 	pmEngine.SetGetHandshakeFunc(func(network, ip string, port int) (peerID string, handshake []byte) {
-		rs := resMgr.findAppWithPort(network, port)
-		if rs.ResID == 0 {
+		app := resMgr.findAppWithPort(network, port)
+		if app.ResID == 0 {
 			return
 		}
-		peerID = rs.PeerID
+		peerID = app.PeerID
 		hs := PortmapAppHandshake{
-			ResID: rs.ResID,
+			ResID:      app.ResID,
+			Network:    app.Network,
+			TargetAddr: app.TargetAddr,
+			TargetPort: app.TargetPort,
 		}
 		handshake, err = json.Marshal(hs)
 		if err != nil {

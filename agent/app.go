@@ -6,11 +6,13 @@ import (
 )
 
 type app struct {
-	PeerID    string `json:"peer_id"`
-	ResID     uint64 `json:"res_id"`
-	Network   string `json:"network"`
-	LocalIP   string `json:"local_ip"`
-	LocalPort int    `json:"local_port"`
+	PeerID     string `json:"peer_id"`
+	ResID      uint64 `json:"res_id"`
+	Network    string `json:"network"`
+	LocalIP    string `json:"local_ip"`
+	LocalPort  int    `json:"local_port"`
+	TargetAddr string `json:"target_addr"`
+	TargetPort int    `json:"target_port"`
 }
 
 type appMgr struct {
@@ -39,5 +41,8 @@ func (m *appMgr) findAppWithPort(network string, port int) app {
 }
 
 type PortmapAppHandshake struct {
-	ResID uint64 `json:"res_id"`
+	ResID      uint64 `json:"res_id"`
+	Network    string `json:"network"`
+	TargetAddr string `json:"target_addr"`
+	TargetPort int    `json:"target_port"`
 }

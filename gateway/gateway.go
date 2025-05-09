@@ -39,6 +39,7 @@ type gateway struct {
 	db  *leveldb.DB
 	pam *PortmapResMgr
 
+	trial bool
 	token uint64
 }
 
@@ -47,6 +48,10 @@ type gatewayConf struct {
 	logDir   string
 	logMod   int
 	logLevel int
+}
+
+func (g *gateway) setTrialMod() {
+	g.trial = true
 }
 
 func (g *gateway) run(conf gatewayConf) error {
@@ -136,6 +141,12 @@ func (g *gateway) handlePortmapHandshake(handshake []byte) (network string, addr
 	pmhs := PortmapAppHandshake{}
 	err = json.Unmarshal(handshake, &pmhs)
 	if err != nil {
+		return
+	}
+	if g.trial && pmhs.ResID == 666666 {
+		network = pmhs.Network
+		addr = pmhs.TargetAddr
+		port = pmhs.TargetPort
 		return
 	}
 	pa := g.pam.GetAppByID(pmhs.ResID)
