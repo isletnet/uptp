@@ -37,7 +37,7 @@ type gateway struct {
 	pe  *p2pengine.P2PEngine
 	pm  *portmap.Portmap
 	db  *leveldb.DB
-	pam *PortmapAppMgr
+	pam *PortmapResMgr
 
 	token uint64
 }
@@ -108,7 +108,7 @@ func (g *gateway) run(conf gatewayConf) error {
 	logging.Info("libp2p id: %s", pe.Libp2pHost().ID())
 	g.pe = pe
 
-	pam, err := NewPortmapAppMgr(db)
+	pam, err := NewPortmapResMgr(db)
 	if err != nil {
 		return err
 	}
@@ -126,9 +126,9 @@ func (g *gateway) run(conf gatewayConf) error {
 
 func (g *gateway) router(ser *apiServer) {
 	ser.addRoute("/portmap", func(r chi.Router) {
-		r.Get("/list_apps", g.listPortmapApps)
-		r.Post("/add_app", g.addPortmapApp)
-		r.Post("/delete_app", g.deletePortmapApp)
+		r.Get("/list_resources", g.listPortmapResources)
+		r.Post("/add_resource", g.addPortmapResource)
+		r.Post("/delete_resource", g.deletePortmapResource)
 	})
 }
 
@@ -149,26 +149,26 @@ func (g *gateway) handlePortmapHandshake(handshake []byte) (network string, addr
 	return
 }
 
-func (g *gateway) listPortmapApps(w http.ResponseWriter, r *http.Request) {
+func (g *gateway) listPortmapResources(w http.ResponseWriter, r *http.Request) {
 	rsp := apiResponse{}
 
-	rsp.Data = g.pam.GetApps()
+	rsp.Data = g.pam.GetResources()
 	rsp.Message = "ok"
 	sendAPIRespWithOk(w, rsp)
 }
-func (g *gateway) addPortmapApp(w http.ResponseWriter, r *http.Request) {
+func (g *gateway) addPortmapResource(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		return
 	}
-	var pa PortmapApp
+	var pa PortmapResource
 	if err = json.Unmarshal(body, &pa); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(err.Error()))
 		return
 	}
 	pa.ID = rand.Uint64()
-	if err = g.pam.AddPortmapApp(&pa); err != nil {
+	if err = g.pam.AddPortmapRes(&pa); err != nil {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(err.Error()))
 		return
@@ -176,9 +176,10 @@ func (g *gateway) addPortmapApp(w http.ResponseWriter, r *http.Request) {
 	sendAPIRespWithOk(w, apiResponse{
 		Code:    0,
 		Message: "ok",
+		Data:    pa.ID,
 	})
 }
-func (g *gateway) deletePortmapApp(w http.ResponseWriter, r *http.Request) {
+func (g *gateway) deletePortmapResource(w http.ResponseWriter, r *http.Request) {
 
 }
 

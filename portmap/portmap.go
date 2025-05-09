@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/isletnet/uptp/logging"
-	"github.com/isletnet/uptp/stream"
+	// "github.com/isletnet/uptp/stream"
 	"github.com/lesismal/nbio"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -185,8 +185,8 @@ func (pm *Portmap) DeleteListener(network string, ip string, port int) {
 	}
 }
 
-func (pm *Portmap) relayHandshake(peerID string, hs []byte) (ps *stream.VarLenPacketStream, err error) {
-	var s network.Stream
+func (pm *Portmap) relayHandshake(peerID string, hs []byte) (s network.Stream, err error) {
+	// var s network.Stream
 	defer func() {
 		if s != nil && err != nil {
 			s.Reset()
@@ -202,14 +202,14 @@ func (pm *Portmap) relayHandshake(peerID string, hs []byte) (ps *stream.VarLenPa
 		logging.Error("[Portmap:relayHandshake] create stream error: %s", err)
 		return nil, err
 	}
-	ps = stream.NewVarLenPacketStream(s, 32*1024)
-	_, err = ps.Write(hs)
+	// ps = stream.NewVarLenPacketStream(s, 32*1024)
+	_, err = s.Write(hs)
 	if err != nil {
 		logging.Error("[Portmap:relayHandshake] write connection handshake error: %s", err)
 		return nil, err
 	}
 	hsBuf := make([]byte, 100)
-	rspLen, err := ps.Read(hsBuf)
+	rspLen, err := s.Read(hsBuf)
 	if err != nil {
 		logging.Error("[Portmap:relayHandshake] read connection handshake rsp error: %s", err)
 		return nil, err
@@ -233,7 +233,7 @@ func (pm *Portmap) onData(c *nbio.Conn, data []byte) {
 		c.Close()
 		return
 	}
-	stream, ok := s.(*stream.VarLenPacketStream)
+	stream, ok := s.(network.Stream)
 	if !ok {
 		c.SetSession(nil)
 		c.Close()
@@ -251,7 +251,7 @@ func (pm *Portmap) onClose(c *nbio.Conn, err error) {
 	if s == nil {
 		return
 	}
-	stream, ok := s.(*stream.VarLenPacketStream)
+	stream, ok := s.(network.Stream)
 	if !ok {
 		return
 	}
@@ -287,22 +287,22 @@ func (pm *Portmap) onConn(c *nbio.Conn) {
 			c.Close()
 			return
 		}
-		ps, err := pm.relayHandshake(pid, hs)
+		s, err := pm.relayHandshake(pid, hs)
 		if err != nil {
 			c.Close()
 			return
 		}
-		c.SetSession(ps)
+		c.SetSession(s)
 		go func() {
-			_, err = io.Copy(c, ps)
+			_, err = io.Copy(c, s)
 			logging.Error("[Portmap:onConn] forward stram to connection error: %s", err)
 			c.SetSession(nil)
-			ps.Close()
+			s.Close()
 			c.Close()
 		}()
 		return
 	}
-	_, ok := s.(*stream.VarLenPacketStream)
+	_, ok := s.(network.Stream)
 	if !ok {
 		c.Close()
 		return
@@ -311,7 +311,7 @@ func (pm *Portmap) onConn(c *nbio.Conn) {
 
 func (pm *Portmap) handleUptpStream(s network.Stream) {
 	go func(s network.Stream) {
-		ps := stream.NewVarLenPacketStream(s, 32*1024)
+		// ps := stream.NewVarLenPacketStream(s, 32*1024)
 		errMsg := ""
 		defer func() {
 			if errMsg != "" {
@@ -319,16 +319,16 @@ func (pm *Portmap) handleUptpStream(s network.Stream) {
 					Code: 1,
 					Msg:  errMsg,
 				}); err == nil {
-					_, _ = ps.Write(rspBuf)
+					_, _ = s.Write(rspBuf)
 				}
-				ps.Close()
+				s.Close()
 			}
 		}()
 
 		hsbuf := make([]byte, 1024)
-		n, err := ps.Read(hsbuf)
+		n, err := s.Read(hsbuf)
 		if err != nil {
-			ps.Close()
+			s.Close()
 			logging.Error("[Portmap:handleUptpStream] read connection handshake error: %s", err)
 			return
 		}
@@ -367,7 +367,7 @@ func (pm *Portmap) handleUptpStream(s network.Stream) {
 			errMsg = "unexpected connection failed"
 			return
 		}
-		nc.SetSession(ps)
+		nc.SetSession(s)
 		rsp := handshakeRsp{
 			Msg: "ok",
 		}
@@ -377,19 +377,19 @@ func (pm *Portmap) handleUptpStream(s network.Stream) {
 			errMsg = "marshal rsp failed"
 			return
 		}
-		_, err = ps.Write(rspBuf)
+		_, err = s.Write(rspBuf)
 		if err != nil {
-			ps.Close()
+			s.Close()
 			nc.Close()
 			logging.Error("[Portmap:handleUptpStream] write connection handshake error: %s", err)
 			return
 		}
 		_, _ = pm.connEngine.AddConn(nc)
 
-		_, err = io.Copy(nc, ps)
+		_, err = io.Copy(nc, s)
 		logging.Error("[Portmap:handleUptpStream] forward stram to connection error: %s", err)
 		nc.SetSession(nil)
-		ps.Close()
+		s.Close()
 		nc.Close()
 	}(s)
 }

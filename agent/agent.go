@@ -14,8 +14,8 @@ import (
 )
 
 func agentRun(workDir string) error {
-	resMgr := resourcesMgr{}
-	err := resMgr.loadResourcesFromFile(filepath.Join(workDir, "res.json"))
+	resMgr := appMgr{}
+	err := resMgr.loadAppFromFile(filepath.Join(workDir, "res.json"))
 	if err != nil {
 		return err
 	}
@@ -49,13 +49,13 @@ func agentRun(workDir string) error {
 
 	pmEngine := portmap.NewPortMap(pe.Libp2pHost())
 	pmEngine.SetGetHandshakeFunc(func(network, ip string, port int) (peerID string, handshake []byte) {
-		rs := resMgr.findResourceWithPort(network, port)
-		if rs.AppID == 0 {
+		rs := resMgr.findAppWithPort(network, port)
+		if rs.ResID == 0 {
 			return
 		}
 		peerID = rs.PeerID
 		hs := PortmapAppHandshake{
-			AppID: rs.AppID,
+			AppID: rs.ResID,
 		}
 		handshake, err = json.Marshal(hs)
 		if err != nil {
@@ -64,7 +64,7 @@ func agentRun(workDir string) error {
 		return
 	})
 	pmEngine.Start(false)
-	for _, r := range resMgr.resList {
+	for _, r := range resMgr.apps {
 		_, err = pmEngine.AddListener(r.Network, r.LocalIP, r.LocalPort)
 		if err != nil {
 			logging.Error("add portmap listener error: %s", err)

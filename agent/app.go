@@ -5,37 +5,37 @@ import (
 	"os"
 )
 
-type resource struct {
+type app struct {
 	PeerID    string `json:"peer_id"`
-	AppID     uint64 `json:"app_id"`
+	ResID     uint64 `json:"res_id"`
 	Network   string `json:"network"`
 	LocalIP   string `json:"local_ip"`
 	LocalPort int    `json:"local_port"`
 }
 
-type resourcesMgr struct {
-	resList []resource
+type appMgr struct {
+	apps []app
 }
 
-func (m *resourcesMgr) loadResourcesFromFile(fp string) error {
+func (m *appMgr) loadAppFromFile(fp string) error {
 	buf, err := os.ReadFile(fp)
 	if err != nil {
 		return err
 	}
-	err = json.Unmarshal(buf, &m.resList)
+	err = json.Unmarshal(buf, &m.apps)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (m *resourcesMgr) findResourceWithPort(network string, port int) resource {
-	for _, r := range m.resList {
+func (m *appMgr) findAppWithPort(network string, port int) app {
+	for _, r := range m.apps {
 		if r.LocalPort == port && r.Network == network {
 			return r
 		}
 	}
-	return resource{}
+	return app{}
 }
 
 type PortmapAppHandshake struct {
