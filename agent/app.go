@@ -39,5 +39,5 @@ func (m *appMgr) findAppWithPort(network string, port int) app {
 }
 
 type PortmapAppHandshake struct {
-	AppID uint64 `json:"app_id"`
+	ResID uint64 `json:"res_id"`
 }

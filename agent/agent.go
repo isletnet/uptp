@@ -55,7 +55,7 @@ func agentRun(workDir string) error {
 		}
 		peerID = rs.PeerID
 		hs := PortmapAppHandshake{
-			AppID: rs.ResID,
+			ResID: rs.ResID,
 		}
 		handshake, err = json.Marshal(hs)
 		if err != nil {

@@ -138,7 +138,7 @@ func (g *gateway) handlePortmapHandshake(handshake []byte) (network string, addr
 	if err != nil {
 		return
 	}
-	pa := g.pam.GetAppByID(pmhs.AppID)
+	pa := g.pam.GetAppByID(pmhs.ResID)
 	if pa.ID == 0 {
 		err = errors.New("portmap app not found")
 		return
