@@ -68,6 +68,20 @@ func (pam *PortmapResMgr) DelPortmapApp(resID uint64) error {
 	return nil
 }
 
+func (pam *PortmapResMgr) UpdatePortmapRes(res *PortmapResource) error {
+	pam.resMtx.Lock()
+	defer pam.resMtx.Unlock()
+	if pam.resources == nil {
+		pam.resources = make(map[uint64]PortmapResource)
+	}
+	pam.resources[res.ID] = *res
+	err := pam.savePortmap()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (pam *PortmapResMgr) GetAppByID(resID uint64) PortmapResource {
 	pam.resMtx.Lock()
 	defer pam.resMtx.Unlock()

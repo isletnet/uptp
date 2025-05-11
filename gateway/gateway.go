@@ -132,7 +132,9 @@ func (g *gateway) run(conf gatewayConf) error {
 func (g *gateway) router(ser *apiServer) {
 	ser.addRoute("/portmap", func(r chi.Router) {
 		r.Get("/list_resources", g.listPortmapResources)
+		r.Get("/get_resource/{id}", g.getPortmapResource)
 		r.Post("/add_resource", g.addPortmapResource)
+		r.Post("/update_resource", g.updatePortmapResource)
 		r.Post("/delete_resource", g.deletePortmapResource)
 	})
 }
@@ -167,6 +169,30 @@ func (g *gateway) listPortmapResources(w http.ResponseWriter, r *http.Request) {
 	rsp.Message = "ok"
 	sendAPIRespWithOk(w, rsp)
 }
+
+func (g *gateway) getPortmapResource(w http.ResponseWriter, r *http.Request) {
+	rsp := apiResponse{}
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		rsp.Code = 400
+		rsp.Message = "invalid resource id"
+		sendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	resource := g.pam.GetAppByID(id)
+	if resource.ID == 0 {
+		rsp.Code = 404
+		rsp.Message = "resource not found"
+		sendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	rsp.Data = resource
+	sendAPIRespWithOk(w, rsp)
+}
+
 func (g *gateway) addPortmapResource(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -190,8 +216,110 @@ func (g *gateway) addPortmapResource(w http.ResponseWriter, r *http.Request) {
 		Data:    pa.ID,
 	})
 }
-func (g *gateway) deletePortmapResource(w http.ResponseWriter, r *http.Request) {
 
+func (g *gateway) updatePortmapResource(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return
+	}
+	var pa PortmapResource
+	if err = json.Unmarshal(body, &pa); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	if pa.ID == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("resource id is required"))
+		return
+	}
+
+	// 验证资源是否存在
+	existing := g.pam.GetAppByID(pa.ID)
+	if existing.ID == 0 {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte("resource not found"))
+		return
+	}
+
+	// 验证资源参数
+	if err := validatePortmapResource(&pa); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	if err = g.pam.UpdatePortmapRes(&pa); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	sendAPIRespWithOk(w, apiResponse{
+		Code:    0,
+		Message: "ok",
+		Data:    pa.ID,
+	})
+}
+
+func (g *gateway) deletePortmapResource(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return
+	}
+	var req struct {
+		ID uint64 `json:"id"`
+	}
+	if err = json.Unmarshal(body, &req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	if req.ID == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("resource id is required"))
+		return
+	}
+
+	// 验证资源是否存在
+	existing := g.pam.GetAppByID(req.ID)
+	if existing.ID == 0 {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte("resource not found"))
+		return
+	}
+
+	if err = g.pam.DelPortmapApp(req.ID); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(err.Error()))
+		return
+	}
+
+	sendAPIRespWithOk(w, apiResponse{
+		Code:    0,
+		Message: "ok",
+	})
+}
+
+func validatePortmapResource(res *PortmapResource) error {
+	if res.Name == "" {
+		return errors.New("resource name is required")
+	}
+	if res.Network != "tcp" && res.Network != "udp" {
+		return errors.New("invalid network type, must be tcp or udp")
+	}
+	if res.TargetAddr == "" {
+		return errors.New("target address is required")
+	}
+	if res.TargetPort <= 0 || res.TargetPort > 65535 {
+		return errors.New("invalid target port")
+	}
+	if res.LocalPort > 0 && res.LocalPort > 65535 {
+		return errors.New("invalid local port")
+	}
+	return nil
 }
 
 func (g *gateway) loadBootstraps() (ret []string) {
