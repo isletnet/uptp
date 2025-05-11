@@ -1,0 +1,47 @@
+# 编译输出
+__debug_bin*
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# 日志文件
+*.log
+log/
+**/log/
+
+# 数据库文件
+*.db
+**/dht.db/
+**/data.db/
+
+# 运行时文件
+uuid
+**/uuid
+
+# IDE 配置
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# 临时文件
+*.tmp
+*.temp
+*.bak
+
+# 配置文件（根据需要可以取消注释）
+app.json
+**/app.json
+
+# 依赖目录
+vendor/
+
+# 测试文件
+*.test
+*.out 
