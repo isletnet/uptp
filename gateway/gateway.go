@@ -137,6 +137,14 @@ func (g *gateway) router(ser *apiServer) {
 		r.Post("/update_resource", g.updatePortmapResource)
 		r.Post("/delete_resource", g.deletePortmapResource)
 	})
+
+	// 使用嵌入的静态文件
+	fileServer := http.FileServer(getWebFS())
+	ser.addRoute("/", func(r chi.Router) {
+		r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
+			fileServer.ServeHTTP(w, r)
+		})
+	})
 }
 
 func (g *gateway) handlePortmapHandshake(handshake []byte) (network string, addr string, port int, err error) {
@@ -145,7 +153,7 @@ func (g *gateway) handlePortmapHandshake(handshake []byte) (network string, addr
 	if err != nil {
 		return
 	}
-	if g.trial && pmhs.ResID == 666666 {
+	if g.trial && pmhs.ResID == ResourceID(666666) {
 		network = pmhs.Network
 		addr = pmhs.TargetAddr
 		port = pmhs.TargetPort
@@ -181,7 +189,7 @@ func (g *gateway) getPortmapResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resource := g.pam.GetAppByID(id)
+	resource := g.pam.GetAppByID(ResourceID(id))
 	if resource.ID == 0 {
 		rsp.Code = 404
 		rsp.Message = "resource not found"
@@ -194,113 +202,129 @@ func (g *gateway) getPortmapResource(w http.ResponseWriter, r *http.Request) {
 }
 
 func (g *gateway) addPortmapResource(w http.ResponseWriter, r *http.Request) {
+	rsp := apiResponse{}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		sendAPIRespWithOk(w, rsp)
 		return
 	}
 	var pa PortmapResource
 	if err = json.Unmarshal(body, &pa); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(err.Error()))
+		rsp.Code = 400
+		rsp.Message = err.Error()
+		sendAPIRespWithOk(w, rsp)
 		return
 	}
-	pa.ID = rand.Uint64()
+	pa.ID = ResourceID(rand.Uint64())
 	if err = g.pam.AddPortmapRes(&pa); err != nil {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(err.Error()))
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		sendAPIRespWithOk(w, rsp)
 		return
 	}
-	sendAPIRespWithOk(w, apiResponse{
-		Code:    0,
-		Message: "ok",
-		Data:    pa.ID,
-	})
+	rsp.Data = pa.ID
+	rsp.Message = "ok"
+	sendAPIRespWithOk(w, rsp)
 }
 
 func (g *gateway) updatePortmapResource(w http.ResponseWriter, r *http.Request) {
+	rsp := apiResponse{}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		sendAPIRespWithOk(w, rsp)
 		return
 	}
 	var pa PortmapResource
 	if err = json.Unmarshal(body, &pa); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(err.Error()))
+		rsp.Code = 400
+		rsp.Message = err.Error()
+		sendAPIRespWithOk(w, rsp)
 		return
 	}
 
 	if pa.ID == 0 {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("resource id is required"))
+		rsp.Code = 400
+		rsp.Message = "resource id is required"
+		sendAPIRespWithOk(w, rsp)
 		return
 	}
 
 	// 验证资源是否存在
 	existing := g.pam.GetAppByID(pa.ID)
 	if existing.ID == 0 {
-		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte("resource not found"))
+		rsp.Code = 404
+		rsp.Message = "resource not found"
+		sendAPIRespWithOk(w, rsp)
 		return
 	}
 
 	// 验证资源参数
 	if err := validatePortmapResource(&pa); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(err.Error()))
+		rsp.Code = 400
+		rsp.Message = err.Error()
+		sendAPIRespWithOk(w, rsp)
 		return
 	}
 
 	if err = g.pam.UpdatePortmapRes(&pa); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(err.Error()))
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		sendAPIRespWithOk(w, rsp)
 		return
 	}
 
-	sendAPIRespWithOk(w, apiResponse{
-		Code:    0,
-		Message: "ok",
-		Data:    pa.ID,
-	})
+	rsp.Message = "ok"
+	sendAPIRespWithOk(w, rsp)
 }
 
 func (g *gateway) deletePortmapResource(w http.ResponseWriter, r *http.Request) {
+	rsp := apiResponse{}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		sendAPIRespWithOk(w, rsp)
 		return
 	}
 	var req struct {
-		ID uint64 `json:"id"`
+		ID ResourceID `json:"id"`
 	}
 	if err = json.Unmarshal(body, &req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(err.Error()))
+		rsp.Code = 400
+		rsp.Message = err.Error()
+		sendAPIRespWithOk(w, rsp)
 		return
 	}
 
 	if req.ID == 0 {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("resource id is required"))
+		rsp.Code = 400
+		rsp.Message = "resource id is required"
+		sendAPIRespWithOk(w, rsp)
 		return
 	}
 
 	// 验证资源是否存在
 	existing := g.pam.GetAppByID(req.ID)
 	if existing.ID == 0 {
-		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte("resource not found"))
+		rsp.Code = 404
+		rsp.Message = "resource not found"
+		sendAPIRespWithOk(w, rsp)
 		return
 	}
 
 	if err = g.pam.DelPortmapApp(req.ID); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(err.Error()))
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		sendAPIRespWithOk(w, rsp)
 		return
 	}
 
-	sendAPIRespWithOk(w, apiResponse{
-		Code:    0,
-		Message: "ok",
-	})
+	rsp.Message = "ok"
+	sendAPIRespWithOk(w, rsp)
 }
 
 func validatePortmapResource(res *PortmapResource) error {

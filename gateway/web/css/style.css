@@ -1,0 +1,28 @@
+.table th {
+    white-space: nowrap;
+}
+
+.table td {
+    vertical-align: middle;
+}
+
+.btn-group-sm .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+.action-buttons {
+    white-space: nowrap;
+}
+
+.modal-dialog {
+    max-width: 500px;
+}
+
+.form-label {
+    font-weight: 500;
+}
+
+.table-responsive {
+    margin-bottom: 0;
+} 

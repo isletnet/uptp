@@ -2,20 +2,54 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"sync"
 
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
+// ResourceID 自定义资源ID类型
+type ResourceID uint64
+
+// MarshalJSON 实现 json.Marshaler 接口
+func (id ResourceID) MarshalJSON() ([]byte, error) {
+	return json.Marshal(id.String())
+}
+
+// UnmarshalJSON 实现 json.Unmarshaler 接口
+func (id *ResourceID) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	var v uint64
+	_, err := fmt.Sscanf(s, "%d", &v)
+	if err != nil {
+		return err
+	}
+	*id = ResourceID(v)
+	return nil
+}
+
+// String 实现 fmt.Stringer 接口
+func (id ResourceID) String() string {
+	return fmt.Sprintf("%d", uint64(id))
+}
+
+// Uint64 转换为 uint64
+func (id ResourceID) Uint64() uint64 {
+	return uint64(id)
+}
+
 type PortmapResource struct {
-	ID         uint64 `json:"id"`
-	Name       string `json:"name"`
-	Type       int    `json:"type"`
-	Network    string `json:"network"`
-	TargetAddr string `json:"target_addr"`
-	TargetPort int    `json:"target_port"`
-	LocalIP    string `json:"local_ip"`
-	LocalPort  int    `json:"local_port"`
+	ID         ResourceID `json:"id"`
+	Name       string     `json:"name"`
+	Type       int        `json:"type"`
+	Network    string     `json:"network"`
+	TargetAddr string     `json:"target_addr"`
+	TargetPort int        `json:"target_port"`
+	LocalIP    string     `json:"local_ip"`
+	LocalPort  int        `json:"local_port"`
 }
 
 var (
@@ -26,7 +60,7 @@ type PortmapResMgr struct {
 	db *leveldb.DB
 
 	resMtx    sync.Mutex
-	resources map[uint64]PortmapResource
+	resources map[ResourceID]PortmapResource
 }
 
 func NewPortmapResMgr(db *leveldb.DB) (*PortmapResMgr, error) {
@@ -44,7 +78,7 @@ func (pam *PortmapResMgr) AddPortmapRes(res *PortmapResource) error {
 	pam.resMtx.Lock()
 	defer pam.resMtx.Unlock()
 	if pam.resources == nil {
-		pam.resources = make(map[uint64]PortmapResource)
+		pam.resources = make(map[ResourceID]PortmapResource)
 	}
 	pam.resources[res.ID] = *res
 	err := pam.savePortmap()
@@ -54,7 +88,7 @@ func (pam *PortmapResMgr) AddPortmapRes(res *PortmapResource) error {
 	return nil
 }
 
-func (pam *PortmapResMgr) DelPortmapApp(resID uint64) error {
+func (pam *PortmapResMgr) DelPortmapApp(resID ResourceID) error {
 	pam.resMtx.Lock()
 	defer pam.resMtx.Unlock()
 	if pam.resources == nil {
@@ -72,7 +106,7 @@ func (pam *PortmapResMgr) UpdatePortmapRes(res *PortmapResource) error {
 	pam.resMtx.Lock()
 	defer pam.resMtx.Unlock()
 	if pam.resources == nil {
-		pam.resources = make(map[uint64]PortmapResource)
+		pam.resources = make(map[ResourceID]PortmapResource)
 	}
 	pam.resources[res.ID] = *res
 	err := pam.savePortmap()
@@ -82,11 +116,11 @@ func (pam *PortmapResMgr) UpdatePortmapRes(res *PortmapResource) error {
 	return nil
 }
 
-func (pam *PortmapResMgr) GetAppByID(resID uint64) PortmapResource {
+func (pam *PortmapResMgr) GetAppByID(resID ResourceID) PortmapResource {
 	pam.resMtx.Lock()
 	defer pam.resMtx.Unlock()
 	if pam.resources == nil {
-		pam.resources = make(map[uint64]PortmapResource)
+		pam.resources = make(map[ResourceID]PortmapResource)
 	}
 	return pam.resources[resID]
 }
@@ -118,9 +152,6 @@ func (pam *PortmapResMgr) loadRes() error {
 }
 
 func (pam *PortmapResMgr) savePortmap() error {
-	// pam.appMtx.Lock()
-	// defer pam.appMtx.Unlock()
-
 	if pam.resources == nil {
 		return nil
 	}
@@ -136,8 +167,8 @@ func (pam *PortmapResMgr) savePortmap() error {
 }
 
 type PortmapAppHandshake struct {
-	ResID      uint64 `json:"res_id"`
-	Network    string `json:"network"`
-	TargetAddr string `json:"target_addr"`
-	TargetPort int    `json:"target_port"`
+	ResID      ResourceID `json:"res_id"`
+	Network    string     `json:"network"`
+	TargetAddr string     `json:"target_addr"`
+	TargetPort int        `json:"target_port"`
 }
