@@ -295,7 +295,9 @@ func (pm *Portmap) onConn(c *nbio.Conn) {
 		c.SetSession(s)
 		go func() {
 			_, err = io.Copy(c, s)
-			logging.Error("[Portmap:onConn] forward stram to connection error: %s", err)
+			if err != nil {
+				logging.Error("[Portmap:onConn] forward stram to connection error: %s", err)
+			}
 			c.SetSession(nil)
 			s.Close()
 			c.Close()
@@ -387,7 +389,9 @@ func (pm *Portmap) handleUptpStream(s network.Stream) {
 		_, _ = pm.connEngine.AddConn(nc)
 
 		_, err = io.Copy(nc, s)
-		logging.Error("[Portmap:handleUptpStream] forward stram to connection error: %s", err)
+		if err != nil {
+			logging.Error("[Portmap:handleUptpStream] forward stram to connection error: %s", err)
+		}
 		nc.SetSession(nil)
 		s.Close()
 		nc.Close()

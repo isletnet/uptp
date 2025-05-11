@@ -16,6 +16,7 @@ import (
 	"github.com/isletnet/uptp/logging"
 	"github.com/isletnet/uptp/p2pengine"
 	"github.com/isletnet/uptp/portmap"
+	"github.com/isletnet/uptp/types"
 
 	"github.com/go-chi/chi"
 	"github.com/google/uuid"
@@ -153,7 +154,7 @@ func (g *gateway) handlePortmapHandshake(handshake []byte) (network string, addr
 	if err != nil {
 		return
 	}
-	if g.trial && pmhs.ResID == ResourceID(666666) {
+	if g.trial && pmhs.ResID == types.ID(666666) {
 		network = pmhs.Network
 		addr = pmhs.TargetAddr
 		port = pmhs.TargetPort
@@ -183,13 +184,11 @@ func (g *gateway) getPortmapResource(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
-		rsp.Code = 400
-		rsp.Message = "invalid resource id"
-		sendAPIRespWithOk(w, rsp)
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
 		return
 	}
 
-	resource := g.pam.GetAppByID(ResourceID(id))
+	resource := g.pam.GetAppByID(types.ID(id))
 	if resource.ID == 0 {
 		rsp.Code = 404
 		rsp.Message = "resource not found"
@@ -217,7 +216,7 @@ func (g *gateway) addPortmapResource(w http.ResponseWriter, r *http.Request) {
 		sendAPIRespWithOk(w, rsp)
 		return
 	}
-	pa.ID = ResourceID(rand.Uint64())
+	pa.ID = types.ID(rand.Uint64())
 	if err = g.pam.AddPortmapRes(&pa); err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
@@ -291,7 +290,7 @@ func (g *gateway) deletePortmapResource(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var req struct {
-		ID ResourceID `json:"id"`
+		ID types.ID `json:"id"`
 	}
 	if err = json.Unmarshal(body, &req); err != nil {
 		rsp.Code = 400

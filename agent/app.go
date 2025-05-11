@@ -3,6 +3,8 @@ package main
 import (
 	"encoding/json"
 	"os"
+
+	"github.com/isletnet/uptp/types"
 )
 
 type app struct {
@@ -41,8 +43,8 @@ func (m *appMgr) findAppWithPort(network string, port int) app {
 }
 
 type PortmapAppHandshake struct {
-	ResID      uint64 `json:"res_id"`
-	Network    string `json:"network"`
-	TargetAddr string `json:"target_addr"`
-	TargetPort int    `json:"target_port"`
+	ResID      types.ID `json:"res_id"`
+	Network    string   `json:"network"`
+	TargetAddr string   `json:"target_addr"`
+	TargetPort int      `json:"target_port"`
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/isletnet/uptp/logging"
 	"github.com/isletnet/uptp/p2pengine"
 	"github.com/isletnet/uptp/portmap"
+	"github.com/isletnet/uptp/types"
 )
 
 func agentRun(workDir string) error {
@@ -55,7 +56,7 @@ func agentRun(workDir string) error {
 		}
 		peerID = app.PeerID
 		hs := PortmapAppHandshake{
-			ResID:      app.ResID,
+			ResID:      types.ID(app.ResID),
 			Network:    app.Network,
 			TargetAddr: app.TargetAddr,
 			TargetPort: app.TargetPort,
