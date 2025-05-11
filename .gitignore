@@ -5,6 +5,7 @@ __debug_bin*
 *.dll
 *.so
 *.dylib
+dist
 
 # 日志文件
 *.log
@@ -13,8 +14,7 @@ log/
 
 # 数据库文件
 *.db
-**/dht.db/
-**/data.db/
+**/*.db/
 
 # 运行时文件
 uuid
