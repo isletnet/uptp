@@ -78,7 +78,7 @@ func NewP2PEngine(seed []byte, logFile, dhtDBPath string, clentMode bool, bf fun
 	ret := P2PEngine{}
 	ipv6BlackHoleSC := &swarm.BlackHoleSuccessCounter{N: 100, MinSuccesses: 5, Name: "IPv6"}
 	opts := []libp2p.Option{
-		libp2p.Security(noise.ID, noise.New),
+		libp2p.Security(noise.ID, NewSessionTransport),
 		libp2p.Identity(priv),
 		libp2p.ListenAddrStrings(
 			"/ip6/::/tcp/0",

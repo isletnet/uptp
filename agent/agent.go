@@ -41,7 +41,7 @@ func agentRun(workDir string) error {
 	}
 
 	pe, err := p2pengine.NewP2PEngine(us, filepath.Join(workDir, "libp2p.log"), filepath.Join(workDir, "dht.db"), true, func() []string {
-		return []string{"/ip6/2402:4e00:101a:d400:0:9a33:9051:1549/tcp/2025/p2p/12D3KooWPqvupWVWbcjwKkvfBwPi19KerGwEfmWxdyrqRd7AtCaa"}
+		return []string{"/dns6/bootstrap.isletnet.cn/tcp/2025/p2p/12D3KooWPqvupWVWbcjwKkvfBwPi19KerGwEfmWxdyrqRd7AtCaa"}
 	})
 	if err != nil {
 		return err

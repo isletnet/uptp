@@ -11,6 +11,7 @@ import (
 	ds "github.com/ipfs/go-datastore"
 	dsync "github.com/ipfs/go-datastore/sync"
 	log "github.com/ipfs/go-log/v2"
+	"github.com/isletnet/uptp/p2pengine"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -52,7 +53,7 @@ func main() {
 		panic(err)
 	}
 	h, err := libp2p.New(
-		libp2p.Security(noise.ID, noise.New),
+		libp2p.Security(noise.ID, p2pengine.NewSessionTransport),
 		libp2p.Identity(priv),
 		libp2p.ListenAddrStrings("/ip6/::/tcp/2025"),
 		libp2p.Transport(tcp.NewTCPTransport),

@@ -360,7 +360,7 @@ func (g *gateway) loadBootstraps() (ret []string) {
 func (g *gateway) getBootstraps() []string {
 	bts := g.loadBootstraps()
 	if bts == nil {
-		bts = append(bts, "/ip6/2402:4e00:101a:d400:0:9a33:9051:1549/tcp/2025/p2p/12D3KooWPqvupWVWbcjwKkvfBwPi19KerGwEfmWxdyrqRd7AtCaa")
+		bts = append(bts, "/dns6/bootstrap.isletnet.cn/tcp/2025/p2p/12D3KooWPqvupWVWbcjwKkvfBwPi19KerGwEfmWxdyrqRd7AtCaa")
 	}
 	return bts
 }
