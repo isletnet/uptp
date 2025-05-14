@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/isletnet/uptp/agent"
 	"github.com/isletnet/uptp/logger"
 	"github.com/isletnet/uptp/logging"
 )
@@ -26,9 +27,9 @@ func main() {
 
 	logging.Info("uptp agent start")
 
-	err := agentRun(baseDir)
+	err := agent.Start(baseDir)
 	if err != nil {
 		logging.Error("agent run error: %s", err)
 	}
-	logging.Info("uptp agent stopped")
+	select {}
 }

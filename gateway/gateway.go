@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/isletnet/uptp/agent"
 	"github.com/isletnet/uptp/logger"
 	"github.com/isletnet/uptp/logging"
 	"github.com/isletnet/uptp/p2pengine"
@@ -149,7 +150,7 @@ func (g *gateway) router(ser *apiServer) {
 }
 
 func (g *gateway) handlePortmapHandshake(handshake []byte) (network string, addr string, port int, err error) {
-	pmhs := PortmapAppHandshake{}
+	pmhs := agent.PortmapAppHandshake{}
 	err = json.Unmarshal(handshake, &pmhs)
 	if err != nil {
 		return

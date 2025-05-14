@@ -1,4 +1,4 @@
-package main
+package agent
 
 import (
 	"crypto/ed25519"
@@ -6,20 +6,56 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/isletnet/uptp/logging"
 	"github.com/isletnet/uptp/p2pengine"
 	"github.com/isletnet/uptp/portmap"
 	"github.com/isletnet/uptp/types"
+	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/errors"
+	"github.com/syndtr/goleveldb/leveldb/opt"
 )
 
-func agentRun(workDir string) error {
-	resMgr := appMgr{}
-	err := resMgr.loadAppFromFile(filepath.Join(workDir, "app.json"))
+type agent struct {
+	p2p *p2pengine.P2PEngine
+	pm  *portmap.Portmap
+	db  *leveldb.DB
+	am  *appMgr
+}
+
+var (
+	gAgent *agent
+	gOnce  sync.Once
+)
+
+func agentIns() *agent {
+	gOnce.Do(func() {
+		gAgent = &agent{}
+	})
+	return gAgent
+}
+
+func (ag *agent) start(workDir string) error {
+	var nopts opt.Options
+
+	p := filepath.Join(workDir, "data.db")
+	db, err := leveldb.OpenFile(p, &nopts)
+	if errors.IsCorrupted(err) && !nopts.GetReadOnly() {
+		db, err = leveldb.RecoverFile(p, &nopts)
+	}
 	if err != nil {
 		return err
 	}
+	ag.db = db
+
+	ag.am = newAppMgr(db)
+	apps, err := ag.am.loadApps()
+	if err != nil {
+		return err
+	}
+
 	us, err := os.ReadFile("uuid")
 	if err != nil && os.IsExist(err) {
 		return err
@@ -40,17 +76,17 @@ func agentRun(workDir string) error {
 		us = []byte(str)
 	}
 
-	pe, err := p2pengine.NewP2PEngine(us, filepath.Join(workDir, "libp2p.log"), filepath.Join(workDir, "dht.db"), true, func() []string {
+	ag.p2p, err = p2pengine.NewP2PEngine(us, filepath.Join(workDir, "libp2p.log"), filepath.Join(workDir, "dht.db"), true, func() []string {
 		return []string{"/dns6/bootstrap.isletnet.cn/tcp/2025/p2p/12D3KooWPqvupWVWbcjwKkvfBwPi19KerGwEfmWxdyrqRd7AtCaa"}
 	})
 	if err != nil {
 		return err
 	}
-	logging.Info("libp2p id: %s", pe.Libp2pHost().ID())
+	logging.Info("libp2p id: %s", ag.p2p.Libp2pHost().ID())
 
-	pmEngine := portmap.NewPortMap(pe.Libp2pHost())
-	pmEngine.SetGetHandshakeFunc(func(network, ip string, port int) (peerID string, handshake []byte) {
-		app := resMgr.findAppWithPort(network, port)
+	ag.pm = portmap.NewPortMap(ag.p2p.Libp2pHost())
+	ag.pm.SetGetHandshakeFunc(func(network, ip string, port int) (peerID string, handshake []byte) {
+		app := ag.am.findAppWithPort(network, port)
 		if app.ResID == 0 {
 			return
 		}
@@ -67,12 +103,40 @@ func agentRun(workDir string) error {
 		}
 		return
 	})
-	pmEngine.Start(false)
-	for _, r := range resMgr.apps {
-		_, err = pmEngine.AddListener(r.Network, r.LocalIP, r.LocalPort)
+	ag.pm.Start(false)
+	for _, a := range apps {
+		if !a.Running {
+			continue
+		}
+		_, err = ag.pm.AddListener(a.Network, a.LocalIP, a.LocalPort)
 		if err != nil {
+			a.Err = err
+			a.Running = false
+			ag.am.updateApp(&a)
 			logging.Error("add portmap listener error: %s", err)
 		}
 	}
-	select {}
+	return nil
+}
+
+func (ag *agent) addApps(a *App) error {
+	err := ag.am.updateApp(a)
+	if err != nil {
+		return err
+	}
+	if a.Running {
+		_, err := ag.pm.AddListener(a.Network, a.LocalIP, a.LocalPort)
+		if err != nil {
+			a.Err = err
+			a.Running = false
+			ag.am.updateApp(a)
+			return err
+		}
+	}
+	return nil
+}
+
+func (ag *agent) delApps(a *App) error {
+	ag.pm.DeleteListener(a.Network, a.LocalIP, a.LocalPort)
+	return ag.am.delApp(a.Name)
 }
