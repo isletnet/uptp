@@ -38,24 +38,10 @@ func agentIns() *agent {
 }
 
 func (ag *agent) start(workDir string) error {
-	var nopts opt.Options
-
-	p := filepath.Join(workDir, "data.db")
-	db, err := leveldb.OpenFile(p, &nopts)
-	if errors.IsCorrupted(err) && !nopts.GetReadOnly() {
-		db, err = leveldb.RecoverFile(p, &nopts)
-	}
+	apps, err := ag.initAppMgr(workDir)
 	if err != nil {
 		return err
 	}
-	ag.db = db
-
-	ag.am = newAppMgr(db)
-	apps, err := ag.am.loadApps()
-	if err != nil {
-		return err
-	}
-
 	us, err := os.ReadFile("uuid")
 	if err != nil && os.IsExist(err) {
 		return err
@@ -119,12 +105,39 @@ func (ag *agent) start(workDir string) error {
 	return nil
 }
 
-func (ag *agent) addApps(a *App) error {
-	err := ag.am.updateApp(a)
+func (ag *agent) initAppMgr(workDir string) ([]App, error) {
+	if ag.am != nil {
+		return nil, nil
+	}
+	var nopts opt.Options
+
+	p := filepath.Join(workDir, "data.db")
+	db, err := leveldb.OpenFile(p, &nopts)
+	if errors.IsCorrupted(err) && !nopts.GetReadOnly() {
+		db, err = leveldb.RecoverFile(p, &nopts)
+	}
+	if err != nil {
+		return nil, err
+	}
+	ag.db = db
+	ag.am = newAppMgr(db)
+	apps, err := ag.am.loadApps()
+	if err != nil {
+		return nil, err
+	}
+	return apps, nil
+}
+
+func (ag *agent) addApps(a *App, editOnly bool) error {
+	_, err := ag.initAppMgr(".")
 	if err != nil {
 		return err
 	}
-	if a.Running {
+	err = ag.am.updateApp(a)
+	if err != nil {
+		return err
+	}
+	if a.Running && !editOnly {
 		_, err := ag.pm.AddListener(a.Network, a.LocalIP, a.LocalPort)
 		if err != nil {
 			a.Err = err
@@ -136,7 +149,13 @@ func (ag *agent) addApps(a *App) error {
 	return nil
 }
 
-func (ag *agent) delApps(a *App) error {
-	ag.pm.DeleteListener(a.Network, a.LocalIP, a.LocalPort)
+func (ag *agent) delApps(a *App, editOnly bool) error {
+	_, err := ag.initAppMgr(".")
+	if err != nil {
+		return err
+	}
+	if !editOnly {
+		ag.pm.DeleteListener(a.Network, a.LocalIP, a.LocalPort)
+	}
 	return ag.am.delApp(a.Name)
 }
