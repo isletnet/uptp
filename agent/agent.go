@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+	"github.com/isletnet/uptp/gateway"
 	"github.com/isletnet/uptp/logging"
 	"github.com/isletnet/uptp/p2pengine"
 	"github.com/isletnet/uptp/portmap"
@@ -77,7 +78,7 @@ func (ag *agent) start(workDir string) error {
 			return
 		}
 		peerID = app.PeerID
-		hs := PortmapAppHandshake{
+		hs := gateway.PortmapAppHandshake{
 			ResID:      types.ID(app.ResID),
 			Network:    app.Network,
 			TargetAddr: app.TargetAddr,

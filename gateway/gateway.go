@@ -1,4 +1,4 @@
-package main
+package gateway
 
 import (
 	"crypto/ed25519"
@@ -12,7 +12,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/isletnet/uptp/agent"
 	"github.com/isletnet/uptp/logger"
 	"github.com/isletnet/uptp/logging"
 	"github.com/isletnet/uptp/p2pengine"
@@ -36,7 +35,7 @@ const (
 	dbKeyGatewayName = "gateway_name"
 )
 
-type gateway struct {
+type Gateway struct {
 	pe  *p2pengine.P2PEngine
 	pm  *portmap.Portmap
 	db  *leveldb.DB
@@ -46,19 +45,26 @@ type gateway struct {
 	token uint64
 }
 
-type gatewayConf struct {
-	workdir  string
-	logDir   string
-	logMod   int
-	logLevel int
+type Config struct {
+	Workdir  string
+	LogDir   string
+	LogMod   int
+	LogLevel int
 }
 
-func (g *gateway) setTrialMod() {
+type PortmapAppHandshake struct {
+	ResID      types.ID `json:"res_id"`
+	Network    string   `json:"network"`
+	TargetAddr string   `json:"target_addr"`
+	TargetPort int      `json:"target_port"`
+}
+
+func (g *Gateway) SetTrialMod() {
 	g.trial = true
 }
 
-func (g *gateway) run(conf gatewayConf) error {
-	wd := conf.workdir
+func (g *Gateway) Run(conf Config) error {
+	wd := conf.Workdir
 	if wd == "" {
 		e, err := os.Executable()
 		if err != nil {
@@ -67,14 +73,14 @@ func (g *gateway) run(conf gatewayConf) error {
 		wd = filepath.Dir(e)
 	}
 	os.Chdir(wd)
-	ld := conf.logDir
+	ld := conf.LogDir
 	if ld == "" {
 		ld = "."
 	}
 
-	lm := conf.logMod
+	lm := conf.LogMod
 
-	gLog := logger.NewLogger(ld, "uptp-gateway", conf.logLevel, 1024*1024, lm)
+	gLog := logger.NewLogger(ld, "uptp-gateway", conf.LogLevel, 1024*1024, lm)
 	logging.SetLogger(gLog)
 
 	logging.Info("uptp gateway start")
@@ -132,7 +138,7 @@ func (g *gateway) run(conf gatewayConf) error {
 	return apiSer.serve()
 }
 
-func (g *gateway) router(ser *apiServer) {
+func (g *Gateway) router(ser *apiServer) {
 	ser.addRoute("/resource", func(r chi.Router) {
 		r.Get("/list", g.listResources)
 		r.Get("/get/{id}", g.getResource)
@@ -155,8 +161,8 @@ func (g *gateway) router(ser *apiServer) {
 	})
 }
 
-func (g *gateway) handlePortmapHandshake(handshake []byte) (network string, addr string, port int, err error) {
-	pmhs := agent.PortmapAppHandshake{}
+func (g *Gateway) handlePortmapHandshake(handshake []byte) (network string, addr string, port int, err error) {
+	pmhs := PortmapAppHandshake{}
 	err = json.Unmarshal(handshake, &pmhs)
 	if err != nil {
 		return
@@ -178,7 +184,7 @@ func (g *gateway) handlePortmapHandshake(handshake []byte) (network string, addr
 	return
 }
 
-func (g *gateway) listResources(w http.ResponseWriter, r *http.Request) {
+func (g *Gateway) listResources(w http.ResponseWriter, r *http.Request) {
 	rsp := apiResponse{}
 
 	rsp.Data = g.pam.GetResources()
@@ -186,7 +192,7 @@ func (g *gateway) listResources(w http.ResponseWriter, r *http.Request) {
 	sendAPIRespWithOk(w, rsp)
 }
 
-func (g *gateway) getResource(w http.ResponseWriter, r *http.Request) {
+func (g *Gateway) getResource(w http.ResponseWriter, r *http.Request) {
 	rsp := apiResponse{}
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseUint(idStr, 10, 64)
@@ -207,7 +213,7 @@ func (g *gateway) getResource(w http.ResponseWriter, r *http.Request) {
 	sendAPIRespWithOk(w, rsp)
 }
 
-func (g *gateway) addResource(w http.ResponseWriter, r *http.Request) {
+func (g *Gateway) addResource(w http.ResponseWriter, r *http.Request) {
 	rsp := apiResponse{}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -235,7 +241,7 @@ func (g *gateway) addResource(w http.ResponseWriter, r *http.Request) {
 	sendAPIRespWithOk(w, rsp)
 }
 
-func (g *gateway) updateResource(w http.ResponseWriter, r *http.Request) {
+func (g *Gateway) updateResource(w http.ResponseWriter, r *http.Request) {
 	rsp := apiResponse{}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -287,7 +293,7 @@ func (g *gateway) updateResource(w http.ResponseWriter, r *http.Request) {
 	sendAPIRespWithOk(w, rsp)
 }
 
-func (g *gateway) deleteResource(w http.ResponseWriter, r *http.Request) {
+func (g *Gateway) deleteResource(w http.ResponseWriter, r *http.Request) {
 	rsp := apiResponse{}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -352,7 +358,7 @@ func validatePortmapResource(res *PortmapResource) error {
 	return nil
 }
 
-func (g *gateway) loadBootstraps() (ret []string) {
+func (g *Gateway) loadBootstraps() (ret []string) {
 	data, err := g.db.Get([]byte(dbKeyBootstraps), nil)
 	if err != nil {
 		return nil
@@ -364,7 +370,7 @@ func (g *gateway) loadBootstraps() (ret []string) {
 	return
 }
 
-func (g *gateway) getBootstraps() []string {
+func (g *Gateway) getBootstraps() []string {
 	bts := g.loadBootstraps()
 	if bts == nil {
 		bts = append(bts, "/dns6/bootstrap.isletnet.cn/tcp/2025/p2p/12D3KooWPqvupWVWbcjwKkvfBwPi19KerGwEfmWxdyrqRd7AtCaa")
@@ -372,7 +378,7 @@ func (g *gateway) getBootstraps() []string {
 	return bts
 }
 
-func (g *gateway) getToken() (uint64, error) {
+func (g *Gateway) getToken() (uint64, error) {
 	v, err := g.db.Get([]byte(dbKeyToken), nil)
 	if err != nil {
 		if err != leveldb.ErrNotFound {
@@ -388,13 +394,13 @@ func (g *gateway) getToken() (uint64, error) {
 	return strconv.ParseUint(string(v), 10, 64)
 }
 
-func (g *gateway) setToken(t uint64) error {
+func (g *Gateway) setToken(t uint64) error {
 	ts := strconv.FormatUint(t, 10)
 	return g.db.Put([]byte(dbKeyToken), []byte(ts), nil)
 }
 
 var (
-	gGW    *gateway
+	gGW    *Gateway
 	gwOnce sync.Once
 )
 
@@ -403,14 +409,14 @@ type GatewayInfo struct {
 	Name  string `json:"name"`
 }
 
-func gwIns() *gateway {
+func Instance() *Gateway {
 	gwOnce.Do(func() {
-		gGW = &gateway{}
+		gGW = &Gateway{}
 	})
 	return gGW
 }
 
-func (g *gateway) getGatewayName() (string, error) {
+func (g *Gateway) getGatewayName() (string, error) {
 	v, err := g.db.Get([]byte(dbKeyGatewayName), nil)
 	if err != nil {
 		if err == leveldb.ErrNotFound {
@@ -421,11 +427,11 @@ func (g *gateway) getGatewayName() (string, error) {
 	return string(v), nil
 }
 
-func (g *gateway) setGatewayName(name string) error {
+func (g *Gateway) setGatewayName(name string) error {
 	return g.db.Put([]byte(dbKeyGatewayName), []byte(name), nil)
 }
 
-func (g *gateway) getGatewayInfo(w http.ResponseWriter, r *http.Request) {
+func (g *Gateway) getGatewayInfo(w http.ResponseWriter, r *http.Request) {
 	rsp := apiResponse{}
 
 	name, err := g.getGatewayName()
@@ -445,7 +451,7 @@ func (g *gateway) getGatewayInfo(w http.ResponseWriter, r *http.Request) {
 	sendAPIRespWithOk(w, rsp)
 }
 
-func (g *gateway) updateGatewayName(w http.ResponseWriter, r *http.Request) {
+func (g *Gateway) updateGatewayName(w http.ResponseWriter, r *http.Request) {
 	rsp := apiResponse{}
 
 	body, err := io.ReadAll(r.Body)

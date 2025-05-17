@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/isletnet/uptp/gateway"
 	"github.com/isletnet/uptp/logger"
 	"github.com/isletnet/uptp/logging"
 	// "github.com/isletnet/machineid"
@@ -53,11 +54,11 @@ func main() {
 		lm = logger.LogFileAndConsole
 	}
 	if rc.trial {
-		gwIns().setTrialMod()
+		gateway.Instance().SetTrialMod()
 	}
-	if err := gwIns().run(gatewayConf{
-		logMod:   lm,
-		logLevel: rc.logLevel,
+	if err := gateway.Instance().Run(gateway.Config{
+		LogMod:   lm,
+		LogLevel: rc.logLevel,
 	}); err != nil {
 		logging.Error("gateway run error: %s", err)
 	}

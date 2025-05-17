@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/isletnet/uptp/types"
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
@@ -97,11 +96,4 @@ func (m *appMgr) findAppWithPort(network string, port int) App {
 		}
 	}
 	return App{}
-}
-
-type PortmapAppHandshake struct {
-	ResID      types.ID `json:"res_id"`
-	Network    string   `json:"network"`
-	TargetAddr string   `json:"target_addr"`
-	TargetPort int      `json:"target_port"`
 }
