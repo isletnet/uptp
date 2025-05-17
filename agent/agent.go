@@ -104,7 +104,20 @@ func (ag *agent) start(workDir string) error {
 	}
 	return nil
 }
-
+func (ag *agent) Close() {
+	if ag.pm != nil {
+		ag.pm.Close()
+		ag.pm = nil
+	}
+	if ag.p2p != nil {
+		ag.p2p.Close()
+		ag.p2p = nil
+	}
+	if ag.db != nil {
+		ag.db.Close()
+		ag.db = nil
+	}
+}
 func (ag *agent) initAppMgr(workDir string) ([]App, error) {
 	if ag.am != nil {
 		return nil, nil

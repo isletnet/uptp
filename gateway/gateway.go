@@ -31,8 +31,9 @@ const (
 )
 
 const (
-	dbKeyToken      = "token"
-	dbKeyBootstraps = "bootstraps"
+	dbKeyToken       = "token"
+	dbKeyBootstraps  = "bootstraps"
+	dbKeyGatewayName = "gateway_name"
 )
 
 type gateway struct {
@@ -132,12 +133,17 @@ func (g *gateway) run(conf gatewayConf) error {
 }
 
 func (g *gateway) router(ser *apiServer) {
-	ser.addRoute("/portmap", func(r chi.Router) {
-		r.Get("/list_resources", g.listPortmapResources)
-		r.Get("/get_resource/{id}", g.getPortmapResource)
-		r.Post("/add_resource", g.addPortmapResource)
-		r.Post("/update_resource", g.updatePortmapResource)
-		r.Post("/delete_resource", g.deletePortmapResource)
+	ser.addRoute("/resource", func(r chi.Router) {
+		r.Get("/list", g.listResources)
+		r.Get("/get/{id}", g.getResource)
+		r.Post("/add", g.addResource)
+		r.Post("/update", g.updateResource)
+		r.Post("/delete", g.deleteResource)
+	})
+
+	ser.addRoute("/gateway", func(r chi.Router) {
+		r.Get("/info", g.getGatewayInfo)
+		r.Post("/name", g.updateGatewayName)
 	})
 
 	// 使用嵌入的静态文件
@@ -172,7 +178,7 @@ func (g *gateway) handlePortmapHandshake(handshake []byte) (network string, addr
 	return
 }
 
-func (g *gateway) listPortmapResources(w http.ResponseWriter, r *http.Request) {
+func (g *gateway) listResources(w http.ResponseWriter, r *http.Request) {
 	rsp := apiResponse{}
 
 	rsp.Data = g.pam.GetResources()
@@ -180,7 +186,7 @@ func (g *gateway) listPortmapResources(w http.ResponseWriter, r *http.Request) {
 	sendAPIRespWithOk(w, rsp)
 }
 
-func (g *gateway) getPortmapResource(w http.ResponseWriter, r *http.Request) {
+func (g *gateway) getResource(w http.ResponseWriter, r *http.Request) {
 	rsp := apiResponse{}
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseUint(idStr, 10, 64)
@@ -201,7 +207,7 @@ func (g *gateway) getPortmapResource(w http.ResponseWriter, r *http.Request) {
 	sendAPIRespWithOk(w, rsp)
 }
 
-func (g *gateway) addPortmapResource(w http.ResponseWriter, r *http.Request) {
+func (g *gateway) addResource(w http.ResponseWriter, r *http.Request) {
 	rsp := apiResponse{}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -229,7 +235,7 @@ func (g *gateway) addPortmapResource(w http.ResponseWriter, r *http.Request) {
 	sendAPIRespWithOk(w, rsp)
 }
 
-func (g *gateway) updatePortmapResource(w http.ResponseWriter, r *http.Request) {
+func (g *gateway) updateResource(w http.ResponseWriter, r *http.Request) {
 	rsp := apiResponse{}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -281,7 +287,7 @@ func (g *gateway) updatePortmapResource(w http.ResponseWriter, r *http.Request) 
 	sendAPIRespWithOk(w, rsp)
 }
 
-func (g *gateway) deletePortmapResource(w http.ResponseWriter, r *http.Request) {
+func (g *gateway) deleteResource(w http.ResponseWriter, r *http.Request) {
 	rsp := apiResponse{}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -392,9 +398,88 @@ var (
 	gwOnce sync.Once
 )
 
+type GatewayInfo struct {
+	P2PID string `json:"p2p_id"`
+	Name  string `json:"name"`
+}
+
 func gwIns() *gateway {
 	gwOnce.Do(func() {
 		gGW = &gateway{}
 	})
 	return gGW
+}
+
+func (g *gateway) getGatewayName() (string, error) {
+	v, err := g.db.Get([]byte(dbKeyGatewayName), nil)
+	if err != nil {
+		if err == leveldb.ErrNotFound {
+			return os.Hostname()
+		}
+		return "", err
+	}
+	return string(v), nil
+}
+
+func (g *gateway) setGatewayName(name string) error {
+	return g.db.Put([]byte(dbKeyGatewayName), []byte(name), nil)
+}
+
+func (g *gateway) getGatewayInfo(w http.ResponseWriter, r *http.Request) {
+	rsp := apiResponse{}
+
+	name, err := g.getGatewayName()
+	if err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		sendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	info := GatewayInfo{
+		P2PID: g.pe.Libp2pHost().ID().String(),
+		Name:  name,
+	}
+
+	rsp.Data = info
+	sendAPIRespWithOk(w, rsp)
+}
+
+func (g *gateway) updateGatewayName(w http.ResponseWriter, r *http.Request) {
+	rsp := apiResponse{}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		sendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		rsp.Code = 400
+		rsp.Message = err.Error()
+		sendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	if req.Name == "" {
+		rsp.Code = 400
+		rsp.Message = "name is required"
+		sendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	if err := g.setGatewayName(req.Name); err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		sendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	rsp.Message = "ok"
+	sendAPIRespWithOk(w, rsp)
 }

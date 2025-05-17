@@ -10,7 +10,42 @@
 </head>
 <body>
     <div class="container mt-4">
-        <h2 class="mb-4">UPTP Gateway 资源管理</h2>
+        <!-- 页面标题 -->
+        <div class="row mb-3">
+            <div class="col-12">
+                <h1 class="display-6">UPTP 网关管理控制台</h1>
+                <hr class="my-2">
+            </div>
+        </div>
+
+        <!-- 网关信息 -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">网关信息</h5>
+                        <button class="btn btn-sm btn-outline-primary" onclick="showGatewayNameModal()">
+                            <i class="bi bi-pencil"></i> 修改名称
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label text-muted small mb-1">网关名称</label>
+                            <div class="fw-bold" id="gatewayName">未设置</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label text-muted small mb-1">网关ID</label>
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="fw-bold text-break" id="gatewayId"></div>
+                                <button class="btn btn-sm btn-light" onclick="copyGatewayId()" title="复制ID">
+                                    <i class="bi bi-clipboard"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
         
         <!-- 资源列表 -->
         <div class="card mb-4">
@@ -36,8 +71,68 @@
                             </tr>
                         </thead>
                         <tbody id="resourceList">
+                            <script id="resourceRowTemplate" type="text/template">
+                                <tr>
+                                    <td class="d-flex align-items-center gap-1">
+                                        <span>{{id}}</span>
+                                        <button class="btn btn-sm btn-light" onclick="copyToClipboard('{{id}}')" title="复制ID">
+                                            <i class="bi bi-clipboard"></i>
+                                        </button>
+                                    </td>
+                                    <td>{{name}}</td>
+                                    <td>{{network}}</td>
+                                    <td>{{targetAddr}}</td>
+                                    <td>{{targetPort}}</td>
+                                    <td>{{localIp}}</td>
+                                    <td>{{localPort}}</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-primary" onclick="editResource('{{id}}')">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger ms-1" onclick="deleteResource('{{id}}')">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            </script>
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 复制成功提示 -->
+    <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 11">
+        <div id="copyToast" class="toast align-items-center text-white bg-success" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <i class="bi bi-check-circle me-2"></i>已复制到剪贴板
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 修改网关名称模态框 -->
+    <div class="modal fade" id="gatewayNameModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">修改网关名称</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="gatewayNameForm">
+                        <div class="mb-3">
+                            <label class="form-label">网关名称</label>
+                            <input type="text" class="form-control" id="newGatewayName" required>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="updateGatewayName()">保存</button>
                 </div>
             </div>
         </div>

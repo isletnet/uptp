@@ -1,5 +1,5 @@
 // API 基础 URL
-const API_BASE_URL = '/portmap';
+const API_BASE_URL = '/resource';
 
 // 模态框实例
 let resourceModal;
@@ -7,13 +7,15 @@ let resourceModal;
 // 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', function() {
     resourceModal = new bootstrap.Modal(document.getElementById('resourceModal'));
+    gatewayNameModal = new bootstrap.Modal(document.getElementById('gatewayNameModal'));
     loadResources();
+    loadGatewayInfo();
 });
 
 // 加载资源列表
 async function loadResources() {
     try {
-        const response = await fetch(`${API_BASE_URL}/list_resources`);
+        const response = await fetch(`${API_BASE_URL}/list`);
         const data = await response.json();
         
         if (data.code === 0) {
@@ -43,22 +45,25 @@ function renderResourceList(resources) {
     resources.forEach(resource => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
-            <td>${resource.id.toString()}</td>
+            <td class="d-flex align-items-center gap-1">
+                <span>${resource.id}</span>
+                <button class="btn btn-sm btn-light" onclick="copyToClipboard('${resource.id}')" title="复制ID">
+                    <i class="bi bi-clipboard"></i>
+                </button>
+            </td>
             <td>${resource.name}</td>
             <td>${resource.network}</td>
             <td>${resource.target_addr}</td>
             <td>${resource.target_port}</td>
             <td>${resource.local_ip || '-'}</td>
             <td>${resource.local_port || '-'}</td>
-            <td class="action-buttons">
-                <div class="btn-group btn-group-sm">
-                    <button class="btn btn-outline-primary" onclick="editResource('${resource.id.toString()}')">
-                        <i class="bi bi-pencil"></i>
-                    </button>
-                    <button class="btn btn-outline-danger" onclick="deleteResource('${resource.id.toString()}')">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </div>
+            <td>
+                <button class="btn btn-sm btn-outline-primary" onclick="editResource('${resource.id.toString()}')">
+                    <i class="bi bi-pencil"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger ms-1" onclick="deleteResource('${resource.id.toString()}')">
+                    <i class="bi bi-trash"></i>
+                </button>
             </td>
         `;
         tbody.appendChild(tr);
@@ -76,7 +81,7 @@ function showAddModal() {
 // 显示编辑资源模态框
 async function editResource(id) {
     try {
-        const response = await fetch(`${API_BASE_URL}/get_resource/${id}`);
+        const response = await fetch(`${API_BASE_URL}/get/${id}`);
         const data = await response.json();
         
         if (data.code === 0) {
@@ -117,7 +122,7 @@ async function saveResource() {
     };
 
     try {
-        const url = resourceId ? `${API_BASE_URL}/update_resource` : `${API_BASE_URL}/add_resource`;
+        const url = resourceId ? `${API_BASE_URL}/update` : `${API_BASE_URL}/add`;
         if (resourceId) {
             resource.id = resourceId;
         }
@@ -149,7 +154,7 @@ async function deleteResource(id) {
     }
 
     try {
-        const response = await fetch(`${API_BASE_URL}/delete_resource`, {
+        const response = await fetch(`${API_BASE_URL}/delete`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -168,7 +173,94 @@ async function deleteResource(id) {
     }
 }
 
+// 加载网关信息
+async function loadGatewayInfo() {
+    try {
+        const response = await fetch('/gateway/info');
+        const data = await response.json();
+        
+        if (data.code === 0) {
+            document.getElementById('gatewayId').textContent = data.data.p2p_id;
+            document.getElementById('gatewayName').textContent = data.data.name || '未设置';
+        } else {
+            showError('加载网关信息失败：' + data.message);
+        }
+    } catch (error) {
+        showError('加载网关信息失败：' + error.message);
+    }
+}
+
+// 显示修改网关名称模态框
+function showGatewayNameModal() {
+    document.getElementById('newGatewayName').value = document.getElementById('gatewayName').textContent;
+    gatewayNameModal.show();
+}
+
+// 更新网关名称
+async function updateGatewayName() {
+    const newName = document.getElementById('newGatewayName').value.trim();
+    if (!newName) {
+        alert('请输入网关名称');
+        return;
+    }
+
+    try {
+        const response = await fetch('/gateway/name', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ name: newName })
+        });
+
+        const data = await response.json();
+        if (data.code === 0) {
+            document.getElementById('gatewayName').textContent = newName;
+            gatewayNameModal.hide();
+        } else {
+            showError('更新网关名称失败：' + data.message);
+        }
+    } catch (error) {
+        showError('更新网关名称失败：' + error.message);
+    }
+}
+
+// 通用复制到剪贴板函数
+function copyToClipboard(text) {
+    if (!text) {
+        showError('没有可复制的内容');
+        return;
+    }
+
+    // 创建临时textarea元素用于复制
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    document.body.appendChild(textarea);
+    textarea.select();
+
+    try {
+        const successful = document.execCommand('copy');
+        if (successful) {
+            const toast = new bootstrap.Toast(document.getElementById('copyToast'));
+            toast.show();
+        } else {
+            showError('复制失败，请手动复制');
+        }
+    } catch (err) {
+        showError('复制失败: ' + err);
+    } finally {
+        document.body.removeChild(textarea);
+    }
+}
+
+// 复制网关ID到剪贴板
+function copyGatewayId() {
+    const gatewayId = document.getElementById('gatewayId').textContent.trim();
+    copyToClipboard(gatewayId);
+}
+
 // 显示错误信息
 function showError(message) {
     alert(message);
-} 
+}

@@ -93,9 +93,9 @@ func NewPortMap(h host.Host) *Portmap {
 		Network:        "tcp",
 		UDPReadTimeout: time.Minute,
 	})
-	g.OnOpen(ret.onConn)
-	g.OnData(ret.onData)
-	g.OnClose(ret.onClose)
+	g.OnOpen(ret.onConnOpen)
+	g.OnData(ret.onConnData)
+	g.OnClose(ret.onConnClose)
 	ret.connEngine = g
 
 	return &ret
@@ -227,7 +227,7 @@ func (pm *Portmap) relayHandshake(peerID string, hs []byte) (s network.Stream, e
 	return
 }
 
-func (pm *Portmap) onData(c *nbio.Conn, data []byte) {
+func (pm *Portmap) onConnData(c *nbio.Conn, data []byte) {
 	s := c.Session()
 	if s == nil {
 		c.Close()
@@ -246,7 +246,7 @@ func (pm *Portmap) onData(c *nbio.Conn, data []byte) {
 		return
 	}
 }
-func (pm *Portmap) onClose(c *nbio.Conn, err error) {
+func (pm *Portmap) onConnClose(c *nbio.Conn, err error) {
 	s := c.Session()
 	if s == nil {
 		return
@@ -258,7 +258,7 @@ func (pm *Portmap) onClose(c *nbio.Conn, err error) {
 	stream.Close()
 }
 
-func (pm *Portmap) onConn(c *nbio.Conn) {
+func (pm *Portmap) onConnOpen(c *nbio.Conn) {
 	// logging.Info("onOpen: [%p, %v]", c, c.RemoteAddr().String())
 	s := c.Session()
 	if s == nil {
@@ -396,6 +396,27 @@ func (pm *Portmap) handleUptpStream(s network.Stream) {
 		s.Close()
 		nc.Close()
 	}(s)
+}
+
+func (pm *Portmap) Close() error {
+	pm.connMtx.Lock()
+	defer pm.connMtx.Unlock()
+
+	// Close all listeners
+	for _, l := range pm.listeners {
+		if err := l.close(); err != nil {
+			logging.Error("[Portmap:Close] close listener error: %s", err)
+		}
+	}
+	pm.listeners = make(map[string]relayListener)
+
+	// Close connEngine which will close all connections
+	if pm.connEngine != nil {
+		pm.connEngine.Stop()
+		pm.connEngine = nil
+	}
+
+	return nil
 }
 
 func convertIndex(network string, ip string, port int) string {

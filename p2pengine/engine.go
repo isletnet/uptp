@@ -151,6 +151,11 @@ func (pe *P2PEngine) Libp2pHost() host.Host {
 	return pe.rhost
 }
 
+func (pe *P2PEngine) Close() error {
+	pe.dht.Host().Close()
+	return pe.dht.Close()
+}
+
 // func (pe *P2PEngine) addrsFactory(mas []ma.Multiaddr) []ma.Multiaddr {
 // 	lplogger.Debug("addrs factory func is called")
 // 	var ret []ma.Multiaddr
