@@ -37,7 +37,7 @@ function renderResourceList(resources) {
 
     if (!resources || resources.length === 0) {
         const tr = document.createElement('tr');
-        tr.innerHTML = '<td colspan="8" class="text-center">暂无数据</td>';
+        tr.innerHTML = '<td colspan="6" class="text-center">暂无数据</td>';
         tbody.appendChild(tr);
         return;
     }
@@ -55,8 +55,6 @@ function renderResourceList(resources) {
             <td>${resource.network}</td>
             <td>${resource.target_addr}</td>
             <td>${resource.target_port}</td>
-            <td>${resource.local_ip || '-'}</td>
-            <td>${resource.local_port || '-'}</td>
             <td>
                 <button class="btn btn-sm btn-outline-primary" onclick="editResource('${resource.id.toString()}')">
                     <i class="bi bi-pencil"></i>
@@ -92,8 +90,6 @@ async function editResource(id) {
             document.getElementById('network').value = resource.network;
             document.getElementById('targetAddr').value = resource.target_addr;
             document.getElementById('targetPort').value = resource.target_port;
-            document.getElementById('localIp').value = resource.local_ip || '';
-            document.getElementById('localPort').value = resource.local_port || '';
             resourceModal.show();
         } else {
             showError('获取资源信息失败：' + data.message);
@@ -117,8 +113,6 @@ async function saveResource() {
         network: document.getElementById('network').value,
         target_addr: document.getElementById('targetAddr').value,
         target_port: parseInt(document.getElementById('targetPort').value),
-        local_ip: document.getElementById('localIp').value || '',
-        local_port: document.getElementById('localPort').value ? parseInt(document.getElementById('localPort').value) : 0
     };
 
     try {
