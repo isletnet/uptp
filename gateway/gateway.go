@@ -134,6 +134,7 @@ func (g *Gateway) Run(conf Config) error {
 
 	apiSer := &apiServer{}
 	g.router(apiSer)
+	g.authorize()
 
 	return apiSer.serve()
 }
