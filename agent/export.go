@@ -4,10 +4,18 @@ func Start(workDir string) error {
 	return agentIns().start(workDir)
 }
 
-func AddApps(a *App, editOnly bool) error {
-	return agentIns().addApps(a, editOnly)
+func AddApp(a *App) error {
+	return agentIns().addApp(a)
 }
 
-func DelApps(a *App, editOnly bool) error {
-	return agentIns().delApps(a, editOnly)
+func UpdateApp(a *App) error {
+	return agentIns().updateAPP(a)
+}
+
+func DelApp(a *App) error {
+	return agentIns().delApp(a)
+}
+
+func GetApps() []App {
+	return agentIns().getApps()
 }

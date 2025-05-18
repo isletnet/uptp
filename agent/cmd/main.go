@@ -43,7 +43,7 @@ func main() {
 				TargetPort: parseInt(os.Args[8]),
 				Running:    true,
 			}
-			if err := agent.AddApps(app, true); err != nil {
+			if err := agent.AddApp(app); err != nil {
 				logging.Error("add app error: %v", err)
 			}
 			return
@@ -53,7 +53,7 @@ func main() {
 				logging.Error("Usage: uptp-agent del <name>")
 				return
 			}
-			if err := agent.DelApps(&agent.App{Name: os.Args[2]}, true); err != nil {
+			if err := agent.DelApp(&agent.App{Name: os.Args[2]}); err != nil {
 				logging.Error("del app error: %v", err)
 			}
 			return

@@ -3,6 +3,7 @@ package agent
 import (
 	"crypto/ed25519"
 	"encoding/json"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +25,8 @@ type agent struct {
 	pm  *portmap.Portmap
 	db  *leveldb.DB
 	am  *appMgr
+
+	running bool
 }
 
 var (
@@ -97,12 +100,13 @@ func (ag *agent) start(workDir string) error {
 		}
 		_, err = ag.pm.AddListener(a.Network, a.LocalIP, a.LocalPort)
 		if err != nil {
-			a.Err = err
+			a.Err = ""
 			a.Running = false
 			ag.am.updateApp(&a)
 			logging.Error("add portmap listener error: %s", err)
 		}
 	}
+	ag.running = true
 	return nil
 }
 func (ag *agent) Close() {
@@ -120,7 +124,7 @@ func (ag *agent) Close() {
 	}
 }
 func (ag *agent) initAppMgr(workDir string) ([]App, error) {
-	if ag.am != nil {
+	if ag.running {
 		return nil, nil
 	}
 	var nopts opt.Options
@@ -142,34 +146,76 @@ func (ag *agent) initAppMgr(workDir string) ([]App, error) {
 	return apps, nil
 }
 
-func (ag *agent) addApps(a *App, editOnly bool) error {
-	_, err := ag.initAppMgr(".")
+func (ag *agent) addApp(a *App) error {
+	a.ID = rand.Uint64()
+	rsp, err := gateway.ResourceAuthorize(ag.p2p.Libp2pHost(), a.PeerID, gateway.AuthorizeReq{
+		ResourceID: types.ID(a.ResID),
+	})
 	if err != nil {
 		return err
 	}
-	err = ag.am.updateApp(a)
-	if err != nil {
-		return err
+	if rsp.Err != "" {
+		return errors.New(rsp.Err)
 	}
-	if a.Running && !editOnly {
+	if !rsp.IsTrial {
+		a.TargetAddr = ""
+		a.TargetPort = 0
+	}
+	a.PeerName = rsp.NodeName
+	if a.Running {
 		_, err := ag.pm.AddListener(a.Network, a.LocalIP, a.LocalPort)
 		if err != nil {
-			a.Err = err
 			a.Running = false
-			ag.am.updateApp(a)
-			return err
+			a.Err = err.Error()
 		}
 	}
-	return nil
+	return ag.am.updateApp(a)
 }
 
-func (ag *agent) delApps(a *App, editOnly bool) error {
-	_, err := ag.initAppMgr(".")
-	if err != nil {
-		return err
+func (ag *agent) updateAPP(a *App) error {
+	if a.ID == 0 {
+		return errors.New("app id is empty")
 	}
-	if !editOnly {
+	exist := ag.am.getApp(a.ID)
+	if exist == nil {
+		return errors.New("app not exists")
+	}
+	exist.Running = a.Running
+	exist.Name = a.Name
+	exist.Network = a.Network
+	exist.LocalIP = a.LocalIP
+	exist.LocalPort = a.LocalPort
+	if exist.TargetAddr != "" {
+		exist.TargetAddr = a.TargetAddr
+		exist.TargetPort = a.TargetPort
+	}
+	if a.Running {
+		if exist.Running &&
+			exist.Network != a.Network || exist.LocalIP != a.LocalIP || exist.LocalPort != a.LocalPort {
+			ag.pm.DeleteListener(exist.Network, exist.LocalIP, exist.LocalPort)
+		}
+		_, err := ag.pm.AddListener(a.Network, a.LocalIP, a.LocalPort)
+		if err != nil {
+			exist.Running = false
+			exist.Err = err.Error()
+		}
+	} else {
 		ag.pm.DeleteListener(a.Network, a.LocalIP, a.LocalPort)
 	}
-	return ag.am.delApp(a.Name)
+	return ag.am.updateApp(exist)
+}
+
+func (ag *agent) delApp(a *App) error {
+	if !ag.running {
+		return errors.New("agent not running")
+	}
+	ag.pm.DeleteListener(a.Network, a.LocalIP, a.LocalPort)
+	return ag.am.delApp(a.ID)
+}
+
+func (ag *agent) getApps() []App {
+	if !ag.running {
+		return nil
+	}
+	return ag.am.getApps()
 }

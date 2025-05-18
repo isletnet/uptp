@@ -80,14 +80,16 @@ func NewP2PEngine(seed []byte, logFile, dhtDBPath string, clentMode bool, bf fun
 	opts := []libp2p.Option{
 		libp2p.Security(noise.ID, NewSessionTransport),
 		libp2p.Identity(priv),
-		libp2p.ListenAddrStrings(
-			"/ip6/::/tcp/0",
-			// "/ip6/::/udp/0/quic-v1",
-		),
 		libp2p.IPv6BlackHoleSuccessCounter(ipv6BlackHoleSC),
 		libp2p.EnableRelay(),
 		// libp2p.AddrsFactory(ret.addrsFactory),
 		libp2p.DefaultTransports,
+	}
+	if !clentMode {
+		opts = append(opts, libp2p.ListenAddrStrings(
+			"/ip6/::/tcp/0",
+			// "/ip6/::/udp/0/quic-v1",
+		))
 	}
 
 	h, err = libp2p.New(opts...)

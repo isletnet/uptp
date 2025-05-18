@@ -12,6 +12,7 @@ var (
 )
 
 type App struct {
+	ID         uint64 `json:"id"`
 	Name       string `json:"name"`
 	PeerID     string `json:"peer_id"`
 	ResID      uint64 `json:"res_id"`
@@ -20,22 +21,23 @@ type App struct {
 	LocalPort  int    `json:"local_port"`
 	TargetAddr string `json:"target_addr"`
 	TargetPort int    `json:"target_port"`
+	Running    bool   `json:"running"`
 
-	Running bool  `json:"running"`
-	Err     error `json:"err"`
+	PeerName string `json:"peer_name"`
+	Err      string `json:"-"`
 }
 
 type appMgr struct {
 	db *leveldb.DB
 
 	mtx  sync.Mutex
-	apps map[string]App
+	apps map[uint64]App
 }
 
 func newAppMgr(db *leveldb.DB) *appMgr {
 	return &appMgr{
 		db:   db,
-		apps: make(map[string]App),
+		apps: make(map[uint64]App),
 	}
 }
 
@@ -53,24 +55,38 @@ func (m *appMgr) loadApps() ([]App, error) {
 	if err != nil {
 		return nil, err
 	}
+	return m.getApps(), nil
+}
+
+func (m *appMgr) getApps() []App {
 	ret := make([]App, 0, len(m.apps))
 	for _, v := range m.apps {
 		ret = append(ret, v)
 	}
-	return ret, nil
+	return ret
+}
+
+func (m *appMgr) getApp(id uint64) *App {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+	a, ok := m.apps[id]
+	if !ok {
+		return nil
+	}
+	return &a
 }
 
 func (m *appMgr) updateApp(a *App) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
-	m.apps[a.Name] = *a
+	m.apps[a.ID] = *a
 	return m.savePortmap()
 }
 
-func (m *appMgr) delApp(name string) error {
+func (m *appMgr) delApp(id uint64) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
-	delete(m.apps, name)
+	delete(m.apps, id)
 	return m.savePortmap()
 }
 
