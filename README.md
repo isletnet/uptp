@@ -1,117 +1,75 @@
 # UPTP (Universal P2P Transport Protocol)
 
-UPTP 是一个基于 libp2p 和 Kademlia DHT 的 P2P 网络穿透工具，利用 IPv6 的全球唯一性，实现了无需 DDNS 的内网服务映射功能。
+UPTP是基于IPv6的内网穿透工具，无需自建云服务器、无需域名、无需DDNS，即可利用家庭宽带的IPv6能力实现内网穿透。
 
 ## 项目特点
 
-- 基于 libp2p 的 P2P 网络实现
-- 使用 Kademlia DHT 进行节点发现和路由
-- 利用 IPv6 全球唯一地址，避免传统 DDNS 方案
+- 纯IPv6 P2P连接，无需中转服务器
+- 图形化界面操作简单
+- 低延迟、高带宽传输
 
-## 技术架构
+## 网络架构
+![架构图](docs/images/architecture.png)
 
-### 1. 网络架构
-```
-[Gateway内网服务] <-> [Gateway] <--P2P连接--> [Agent] <-> [外部访问]
-```
+## 快速开始
 
-### 2. 核心组件
-- **P2P 引擎**：基于 libp2p 实现，支持 IPv6 和 Kademlia DHT
-- **端口映射**：实现内网服务的 P2P 映射
-- **资源管理**：管理端口映射资源
+### 代码编译
 
-### 3. 技术特点
-- 去中心化节点发现
-- 自动地址管理
+1. 确保已安装Go 1.23+环境
+2. 克隆项目仓库:
+   ```bash
+   git clone https://github.com/your-repo/uptp.git
+   ```
+3. 编译windows agent:
+   ```bash
+   cd uptp
+   env CGO_ENABLED=0 GOOS=windows go build -ldflags '-w -c -H windowsgui' -o dist/uptp-agent_windows-amd64.exe ./agent/windows
+   ```
+4. 编译gateway：
+   ```bash
+   env CGO_ENABLED=0 GOOS=linux go build -ldflags '-w -c' -o dist/uptp-gateway_linux-amd64 ./gateway/cmd
+   ```
 
-## 工作原理
+## 快速体验
 
-1. **节点发现**
-   - 使用 Kademlia DHT 进行节点发现
-   - 自动维护节点路由表
-   - 支持引导节点配置
-
-2. **连接建立**
-   - 基于 IPv6 建立 P2P 连接
-   - 自动处理地址变化
-
-3. **端口映射**
-   - Gateway 管理映射资源
-   - Agent 建立本地监听
-   - 通过 P2P 连接转发流量
-
-## 优势
-
-1. **技术优势**
-   - 去中心化架构
-   - 自动地址管理
-   - 高效节点发现
-
-2. **运维优势**
-   - 无需维护 DNS
-   - 自动适应变化
-   - 降低运维成本
-
-3. **成本优势**
-   - 无需域名费用
-   - 无需 DDNS 服务
-   - 降低运营成本
-
-## 应用场景
-
-1. **动态 IP 环境**
-   - 家庭网络
-   - 移动网络
-   - 企业网络
-
-2. **分布式应用**
-   - 点对点通信
-   - 分布式存储
-   - 去中心化服务
-
-3. **网络穿透**
-   - 内网服务暴露
-   - 远程访问
-   - 跨网络通信
-
-## 快速使用
-
-### 1. 启动方式
+### 1. 运行gateway
 ```bash
 # Gateway 端启动（试用模式）
-./uptpgw -trial -v
+./uptp-gateway -trial -v
+```
+gateway web控制台：http://127.0.0.1:3000/
+![gateway web控制台](docs/images/gateway-web.png)
 
-# Agent 端配置示例（app.json）
-{
-    "res_id": 666666,
-    "peer_id": "12D3KooWKuwm865AfwV2KCGQspvst3NugpbdK516m96ierff3B",
-    "network": "tcp",
-    "local_ip": "127.0.0.1",
-    "local_port": 3388,
-    "target_addr": "192.168.x.x",
-    "target_port": 3389
-}
-# Agent 端启动
-./uptp-agent -v
+### 2. 运行agent
+运行uptp-agent.exe进入程序界面，添加应用即可
+![windows agent](docs/images/agent-win.png)
+
+### 3. 访问应用
+![app test](docs/images/app-test-3389.png)
+
+## 高级配置
+
+### gateway端安装
+```bash
+# Linux系统服务安装
+sudo ./uptp-gateway -install
 ```
 
-### 2. 使用说明
-1. **Gateway 端**：
-   - 使用 `-trial` 参数启动
-   - 无需预先配置资源
-   - 自动接受资源 ID 为 666666 的连接请求
 
-2. **Agent 端**：
-   - 配置资源 ID 为 666666
-   - 指定目标地址和端口
-   - 建立本地监听
+## 常见问题
 
-### 3. 注意事项
-- 试用模式仅建议在测试环境使用
-- 日常使用应避免使用试用模式
+Q: 为什么连接失败？
+A: 请检查两端IPv6网络是否通畅，防火墙是否放行相应端口
 
+## 参与贡献
+欢迎提交Pull Request或Issue报告问题
 
-## 日常使用 （待续）
+## 开发计划
 
-### gateway端安装、资源配置
-### agent端应用配置
+- [ ] 开发移动端APP
+- [ ] 支持IPv4 NAT穿透
+- [ ] 添加macOS客户端支持
+- [ ] 完善应用授权机制
+
+## 许可证
+MIT License
