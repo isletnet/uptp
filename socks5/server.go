@@ -3,6 +3,7 @@ package socks5
 import (
 	"io"
 	"net"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -16,6 +17,10 @@ import (
 
 const (
 	socks5ID = "/socks5/1.0.0"
+)
+
+const (
+	CmdConnectUDP byte = 0x04
 )
 
 func StartServe(h host.Host) {
@@ -35,28 +40,56 @@ func handler(s network.Stream) {
 	}
 }
 
-func socks5RequestConnect(rw io.ReadWriter) error {
+func socks5RequestConnect(rw io.ReadWriteCloser) error {
+	defer rw.Close()
 	r, err := socks5.NewRequestFrom(rw)
 	if err != nil {
 		return err
 	}
 
-	if r.Cmd != socks5.CmdConnect {
-		if e := replyErr(r, rw, socks5.RepCommandNotSupported); err != nil {
+	var targetConn io.ReadWriteCloser
+	var sourceConn io.ReadWriter
+	var localAddr string
+
+	switch r.Cmd {
+	case socks5.CmdConnect:
+		conn, err := net.DialTimeout("tcp", r.Address(), time.Second)
+		if err != nil {
+			if e := replyErr(r, rw, socks5.RepHostUnreachable); e != nil {
+				return e
+			}
+			return err
+		}
+		localAddr = conn.LocalAddr().String()
+		targetConn = conn
+		sourceConn = rw
+	case CmdConnectUDP:
+		ra, err := net.ResolveUDPAddr("udp", r.Address())
+		if err != nil {
+			if e := replyErr(r, rw, socks5.RepAddressNotSupported); e != nil {
+				return e
+			}
+			return err
+		}
+		conn, err := net.DialUDP("udp", nil, ra)
+		if err != nil {
+			if e := replyErr(r, rw, socks5.RepHostUnreachable); e != nil {
+				return e
+			}
+			return err
+		}
+		localAddr = conn.LocalAddr().String()
+		targetConn = conn
+		sourceConn = &packetStream{rw: rw}
+	default:
+		if e := replyErr(r, rw, socks5.RepCommandNotSupported); e != nil {
 			return e
 		}
 		return socks5.ErrUnsupportCmd
 	}
-	conn, err := net.DialTimeout("tcp", r.Address(), time.Second)
-	if err != nil {
-		if e := replyErr(r, rw, socks5.RepHostUnreachable); e != nil {
-			return e
-		}
-		return err
-	}
 
-	defer conn.Close()
-	a, addr, port, err := socks5.ParseAddress(conn.LocalAddr().String())
+	defer targetConn.Close()
+	a, addr, port, err := socks5.ParseAddress(localAddr)
 	if err != nil {
 		if e := replyErr(r, rw, socks5.RepHostUnreachable); e != nil {
 			return e
@@ -68,7 +101,7 @@ func socks5RequestConnect(rw io.ReadWriter) error {
 	if _, err := reply.WriteTo(rw); err != nil {
 		return err
 	}
-	return tunneling(conn, rw)
+	return tunneling(targetConn, sourceConn)
 }
 
 func socks5Negotiate(rw io.ReadWriter) error {
@@ -77,12 +110,10 @@ func socks5Negotiate(rw io.ReadWriter) error {
 		return err
 	}
 
-	for _, m := range rq.Methods {
-		if m == socks5.MethodNone {
-			rp := socks5.NewNegotiationReply(socks5.MethodNone)
-			_, err = rp.WriteTo(rw)
-			return err
-		}
+	if slices.Contains(rq.Methods, socks5.MethodNone) {
+		rp := socks5.NewNegotiationReply(socks5.MethodNone)
+		_, err = rp.WriteTo(rw)
+		return err
 	}
 
 	rp := socks5.NewNegotiationReply(socks5.MethodUnsupportAll)
