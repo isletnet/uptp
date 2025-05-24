@@ -109,7 +109,7 @@ func (ag *agent) start(workDir string) error {
 	ag.running = true
 	return nil
 }
-func (ag *agent) Close() {
+func (ag *agent) close() {
 	if ag.pm != nil {
 		ag.pm.Close()
 		ag.pm = nil

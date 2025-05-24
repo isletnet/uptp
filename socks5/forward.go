@@ -29,8 +29,8 @@ func forward(dst, src io.ReadWriter, end func(error)) {
 }
 
 var (
-	errWritePacketLen = errors.New("write packet len failed")
-	errReadPacketLen  = errors.New("read packet len failed")
+	// errWritePacketLen = errors.New("write packet len failed")
+	// errReadPacketLen  = errors.New("read packet len failed")
 	errPacketTooLarge = errors.New("packet too large")
 )
 
@@ -43,16 +43,16 @@ func (ps *packetStream) Write(p []byte) (n int, err error) {
 	if length > 0xFFFF {
 		return 0, errPacketTooLarge
 	}
-	if err := binary.Write(ps.rw, binary.BigEndian, uint16(length)); err == nil {
+	if err = binary.Write(ps.rw, binary.BigEndian, uint16(length)); err == nil {
 		return ps.rw.Write(p)
 	}
-	return 0, errWritePacketLen
+	return 0, err
 }
 
 func (ps *packetStream) Read(p []byte) (n int, err error) {
 	var l uint16
-	if err := binary.Read(ps.rw, binary.BigEndian, &l); err == nil {
+	if err = binary.Read(ps.rw, binary.BigEndian, &l); err == nil {
 		return io.ReadFull(ps.rw, p[:l])
 	}
-	return 0, errReadPacketLen
+	return 0, err
 }

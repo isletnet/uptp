@@ -2,7 +2,6 @@ package tunstack
 
 import (
 	"errors"
-	"net"
 	"sync"
 	"time"
 
@@ -15,6 +14,8 @@ import (
 )
 
 var (
+	_running bool
+
 	_engineMu sync.Mutex
 
 	// _defaultKey holds the default key for the engine.
@@ -28,22 +29,21 @@ var (
 )
 
 // Start starts the default engine up.
-func Start() {
-	if err := start(); err != nil {
-		log.Fatalf("[ENGINE] failed to start: %v", err)
-	}
+func Start() error {
+	return start()
 }
 
 // Stop shuts the default engine down.
-func Stop() {
-	if err := stop(); err != nil {
-		log.Fatalf("[ENGINE] failed to stop: %v", err)
-	}
+func Stop() error {
+	return stop()
 }
 
 func start() error {
 	_engineMu.Lock()
 	defer _engineMu.Unlock()
+	if _running {
+		return nil
+	}
 
 	for _, f := range []func(*Key) error{
 		general,
@@ -58,6 +58,9 @@ func start() error {
 
 func stop() (err error) {
 	_engineMu.Lock()
+	if !_running {
+		return nil
+	}
 	if _defaultDevice != nil {
 		_defaultDevice.Close()
 	}
@@ -82,16 +85,6 @@ func general(k *Key) error {
 		return err
 	}
 	log.SetLogger(log.Must(log.NewLeveled(level)))
-
-	if k.Interface != "" {
-		iface, err := net.InterfaceByName(k.Interface)
-		if err != nil {
-			return err
-		}
-		dialer.DefaultDialer.InterfaceName.Store(iface.Name)
-		dialer.DefaultDialer.InterfaceIndex.Store(int32(iface.Index))
-		log.Infof("[DIALER] bind to interface: %s", k.Interface)
-	}
 
 	if k.Mark != 0 {
 		dialer.DefaultDialer.RoutingMark.Store(int32(k.Mark))
