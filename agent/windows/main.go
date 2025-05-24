@@ -83,12 +83,13 @@ func (m *AppModel) Value(row, col int) interface{} {
 }
 
 func main() {
-	var mw *walk.MainWindow
-	var tv *walk.TableView
-	var logView *walk.TextEdit
-
-	// 初始化应用模型
-	model := &AppModel{}
+	var (
+		mw      **walk.MainWindow = new(*walk.MainWindow)
+		tv      *walk.TableView
+		logView *walk.TextEdit
+		ni      *walk.NotifyIcon
+		model   = &AppModel{}
+	)
 
 	// 获取工作目录
 	exePath, _ := os.Executable()
@@ -106,8 +107,8 @@ func main() {
 		return
 	}
 
-	MainWindow{
-		AssignTo: &mw,
+	err := MainWindow{
+		AssignTo: mw,
 		Title:    "UPTP Agent",
 		MinSize:  Size{800, 600},
 		Layout:   VBox{},
@@ -239,7 +240,7 @@ func main() {
 								},
 							},
 						},
-					}).Run(mw); err != nil {
+					}).Run(*mw); err != nil {
 						logView.AppendText(fmt.Sprintf("对话框错误: %v\r\n", err))
 						return
 					} else if result != walk.DlgCmdOK {
@@ -433,7 +434,7 @@ func main() {
 										},
 									},
 								},
-							}).Run(mw); err != nil {
+							}).Run(*mw); err != nil {
 								logView.AppendText(fmt.Sprintf("对话框错误: %v\r\n", err))
 								return
 							} else if result != walk.DlgCmdOK {
@@ -586,7 +587,7 @@ func main() {
 										},
 									},
 								},
-							}).Run(mw); err != nil {
+							}).Run(*mw); err != nil {
 								logView.AppendText(fmt.Sprintf("对话框错误: %v\r\n", err))
 								return
 							} else if result != walk.DlgCmdOK {
@@ -646,5 +647,71 @@ func main() {
 				VScroll:  true,
 			},
 		},
-	}.Run()
+	}.Create()
+	if err != nil {
+		return
+	}
+	// 创建系统托盘图标
+	icon, err := walk.NewIconFromResourceIdWithSize(2, walk.Size{Width: 16, Height: 16})
+	if err != nil {
+		walk.MsgBox(nil, "错误", "加载托盘图标失败: "+err.Error(), walk.MsgBoxIconError)
+		return
+	}
+
+	// 创建托盘图标
+	ni, err = walk.NewNotifyIcon(*mw)
+	if err != nil {
+		walk.MsgBox(nil, "错误", "创建托盘图标失败: "+err.Error(), walk.MsgBoxIconError)
+		return
+	}
+
+	// 设置托盘图标
+	if err := ni.SetIcon(icon); err != nil {
+		walk.MsgBox(nil, "错误", "设置托盘图标失败: "+err.Error(), walk.MsgBoxIconError)
+		return
+	}
+
+	// 设置托盘提示
+	if err := ni.SetToolTip("UPTP Agent"); err != nil {
+		walk.MsgBox(nil, "错误", "设置托盘提示失败: "+err.Error(), walk.MsgBoxIconError)
+		return
+	}
+
+	// 双击托盘图标显示窗口
+	ni.MouseUp().Attach(func(x, y int, button walk.MouseButton) {
+		if button == walk.LeftButton && ni.Visible() {
+			(*mw).Show()
+		}
+	})
+
+	// 添加"显示主窗口"菜单项
+	showAction := walk.NewAction()
+	if err := showAction.SetText("显示主窗口"); err == nil {
+		showAction.Triggered().Attach(func() {
+			(*mw).Show()
+		})
+		ni.ContextMenu().Actions().Add(showAction)
+	}
+
+	// 添加"退出"菜单项
+	exitAction := walk.NewAction()
+	if err := exitAction.SetText("退出"); err == nil {
+		exitAction.Triggered().Attach(func() {
+			walk.App().Exit(0)
+		})
+		ni.ContextMenu().Actions().Add(exitAction)
+	}
+
+	// 显示托盘图标
+	if err := ni.SetVisible(true); err != nil {
+		walk.MsgBox(nil, "错误", "显示托盘图标失败: "+err.Error(), walk.MsgBoxIconError)
+		return
+	}
+
+	// 设置窗口关闭事件 - 点击关闭按钮时隐藏窗口
+	(*mw).Closing().Attach(func(canceled *bool, reason walk.CloseReason) {
+		*canceled = true
+		(*mw).Hide()
+	})
+	(*mw).Run()
 }
