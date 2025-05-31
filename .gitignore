@@ -25,6 +25,8 @@ uuid
 .idea/
 *.swp
 *.swo
+.git_disabled/
+**/.git_disabled/
 
 # 操作系统文件
 .DS_Store
@@ -44,4 +46,31 @@ vendor/
 
 # 测试文件
 *.test
-*.out 
+*.out
+
+# React Native 项目
+node_modules/
+**/node_modules/
+android/build/
+**/android/build/
+ios/build/
+**/ios/build/
+.gradle/
+**/.gradle/
+*.keystore
+*.jks
+*.apk
+*.aab
+*.ap_
+*.ipa
+*.xcuserstate
+*.xcworkspace
+Podfile.lock
+yarn.lock
+package-lock.json
+npm-debug.log*
+yarn-error.log
+metro-cache/
+**/metro-cache/
+.bundle/
+**/.bundle/

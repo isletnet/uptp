@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item
+        android:id="@+id/menu_view_core_logs"
+        android:title="查看core日志"
+        app:showAsAction="never"/>
+    <item
+        android:id="@+id/menu_view_libp2p_logs"
+        android:title="查看libp2p日志"
+        app:showAsAction="never"/>
+    <item
+        android:id="@+id/menu_add_gateway"
+        android:title="添加网关"
+        app:showAsAction="ifRoom"/>
+    <item
+        android:id="@+id/menu_select_apps"
+        android:title="@string/select_apps"
+        app:showAsAction="ifRoom"/>
+</menu>
