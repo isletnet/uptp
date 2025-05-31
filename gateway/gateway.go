@@ -16,6 +16,7 @@ import (
 	"github.com/isletnet/uptp/logging"
 	"github.com/isletnet/uptp/p2pengine"
 	"github.com/isletnet/uptp/portmap"
+	"github.com/isletnet/uptp/socks5"
 	"github.com/isletnet/uptp/types"
 
 	"github.com/go-chi/chi"
@@ -131,6 +132,10 @@ func (g *Gateway) Run(conf Config) error {
 	g.pm = portmap.NewPortMap(pe.Libp2pHost())
 	g.pm.SetHandleHandshakeFunc(g.handlePortmapHandshake)
 	g.pm.Start(true)
+
+	if g.trial {
+		socks5.StartServe(g.pe.Libp2pHost())
+	}
 
 	apiSer := &apiServer{}
 	g.router(apiSer)

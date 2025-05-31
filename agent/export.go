@@ -1,7 +1,9 @@
 package agent
 
-func Start(workDir string) error {
-	return agentIns().start(workDir)
+import "encoding/json"
+
+func Start(workDir string, withPortmap bool) error {
+	return agentIns().start(workDir, withPortmap)
 }
 
 func Close() {
@@ -24,10 +26,35 @@ func GetApps() []App {
 	return agentIns().getApps()
 }
 
-func StartTunProxy(tunDevice, peerID string) error {
-	return agentIns().startTunProxy(tunDevice, peerID)
+func AddProxyGateway(peerID string) error {
+	return agentIns().addProxyGateway(peerID)
+}
+
+func GetProxyGateways() []string {
+	return agentIns().getProxyGatewayList()
+}
+
+func GetProxyGatewaysJson() string {
+	l := GetProxyGateways()
+	if l == nil {
+		return ""
+	}
+	buf, _ := json.Marshal(l)
+	return string(buf)
+}
+
+func StartTunProxy(tunDevice string, gatewayIdx int) error {
+	return agentIns().startTunProxy(tunDevice, gatewayIdx)
 }
 
 func StopTunProxy() error {
 	return agentIns().stopTunProxy()
+}
+
+// func SetLog(d string) {
+// 	agentIns().setLog(d)
+// }
+
+func PingProxyGateway(idx int) error {
+	return agentIns().pingProxyGateway(idx)
 }

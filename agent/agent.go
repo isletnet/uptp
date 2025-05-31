@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/isletnet/uptp/gateway"
+	"github.com/isletnet/uptp/logger"
 	"github.com/isletnet/uptp/logging"
 	"github.com/isletnet/uptp/p2pengine"
 	"github.com/isletnet/uptp/portmap"
@@ -25,6 +26,8 @@ type agent struct {
 	pm  *portmap.Portmap
 	db  *leveldb.DB
 	am  *appMgr
+
+	*proxyMgr
 
 	running bool
 }
@@ -41,12 +44,31 @@ func agentIns() *agent {
 	return gAgent
 }
 
-func (ag *agent) start(workDir string) error {
-	apps, err := ag.initAppMgr(workDir)
+func (ag *agent) setLog(workDir string) {
+	gLog := logger.NewLogger(workDir, "uptp-agent", 0, 1024*1024, logger.LogFileAndConsole)
+	logging.SetLogger(gLog)
+}
+
+func (ag *agent) start(workDir string, withPortmap bool) error {
+	if ag.running {
+		return nil
+	}
+	ag.setLog(workDir)
+	logging.Info("start agent...")
+
+	var nopts opt.Options
+
+	p := filepath.Join(workDir, "data.db")
+	db, err := leveldb.OpenFile(p, &nopts)
+	if errors.IsCorrupted(err) && !nopts.GetReadOnly() {
+		db, err = leveldb.RecoverFile(p, &nopts)
+	}
 	if err != nil {
 		return err
 	}
-	us, err := os.ReadFile("uuid")
+	ag.db = db
+
+	us, err := os.ReadFile(filepath.Join(workDir, "uuid"))
 	if err != nil && os.IsExist(err) {
 		return err
 	}
@@ -59,21 +81,36 @@ func (ag *agent) start(workDir string) error {
 		if len(str) < ed25519.SeedSize {
 			return err
 		}
-		err = os.WriteFile("uuid", []byte(str), 0644)
+		err = os.WriteFile(filepath.Join(workDir, "uuid"), []byte(str), 0644)
 		if err != nil {
 			return err
 		}
 		us = []byte(str)
 	}
 
-	ag.p2p, err = p2pengine.NewP2PEngine(us, filepath.Join(workDir, "libp2p.log"), filepath.Join(workDir, "dht.db"), true, func() []string {
-		return []string{"/dns6/bootstrap.isletnet.cn/tcp/2025/p2p/12D3KooWPqvupWVWbcjwKkvfBwPi19KerGwEfmWxdyrqRd7AtCaa"}
+	ag.p2p, err = p2pengine.NewP2PEngine(us, filepath.Join(workDir, "log", "libp2p.log"), filepath.Join(workDir, "dht.db"), true, func() []string {
+		return []string{"/ip6/2402:4e00:101a:d400:0:9a33:9051:1549/tcp/2025/p2p/12D3KooWPqvupWVWbcjwKkvfBwPi19KerGwEfmWxdyrqRd7AtCaa"}
 	})
 	if err != nil {
 		return err
 	}
 	logging.Info("libp2p id: %s", ag.p2p.Libp2pHost().ID())
-
+	if withPortmap {
+		ag.startPortmap(workDir)
+	}
+	ag.proxyMgr = &proxyMgr{db: db}
+	err = ag.proxyMgr.loadProxys()
+	if err != nil {
+		return err
+	}
+	ag.running = true
+	return nil
+}
+func (ag *agent) startPortmap(workDir string) error {
+	apps, err := ag.initAppMgr(workDir)
+	if err != nil {
+		return err
+	}
 	ag.pm = portmap.NewPortMap(ag.p2p.Libp2pHost())
 	ag.pm.SetGetHandshakeFunc(func(network, ip string, port int) (peerID string, handshake []byte) {
 		app := ag.am.findAppWithPort(network, port)
@@ -106,7 +143,6 @@ func (ag *agent) start(workDir string) error {
 			logging.Error("add portmap listener error: %s", err)
 		}
 	}
-	ag.running = true
 	return nil
 }
 func (ag *agent) close() {
@@ -124,21 +160,7 @@ func (ag *agent) close() {
 	}
 }
 func (ag *agent) initAppMgr(workDir string) ([]App, error) {
-	if ag.running {
-		return nil, nil
-	}
-	var nopts opt.Options
-
-	p := filepath.Join(workDir, "data.db")
-	db, err := leveldb.OpenFile(p, &nopts)
-	if errors.IsCorrupted(err) && !nopts.GetReadOnly() {
-		db, err = leveldb.RecoverFile(p, &nopts)
-	}
-	if err != nil {
-		return nil, err
-	}
-	ag.db = db
-	ag.am = newAppMgr(db)
+	ag.am = newAppMgr(ag.db)
 	apps, err := ag.am.loadApps()
 	if err != nil {
 		return nil, err

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	"os"
 
 	dsync "github.com/ipfs/go-datastore/sync"
 	levelds "github.com/ipfs/go-ds-leveldb"
@@ -14,6 +15,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
+	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 	rhost "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/libp2p/go-libp2p/p2p/net/swarm"
 	"github.com/libp2p/go-libp2p/p2p/security/noise"
@@ -43,6 +45,7 @@ type P2PEngine struct {
 var lplogger = lplog.Logger("uptp")
 
 func NewP2PEngine(seed []byte, logFile, dhtDBPath string, clentMode bool, bf func() []string) (*P2PEngine, error) {
+	os.Remove(logFile)
 	if len(seed) < ed25519.SeedSize {
 		return nil, errors.New("wrong seed")
 	}
@@ -85,7 +88,18 @@ func NewP2PEngine(seed []byte, logFile, dhtDBPath string, clentMode bool, bf fun
 		// libp2p.AddrsFactory(ret.addrsFactory),
 		libp2p.DefaultTransports,
 	}
-	if !clentMode {
+	if clentMode {
+		opts = append(opts, func(cfg *libp2p.Config) error {
+			cfg.DisableIdentifyAddressDiscovery = true
+			return nil
+		}, libp2p.NoListenAddrs)
+	} else {
+		rm, err := rcmgr.NewResourceManager(rcmgr.NewFixedLimiter(rcmgr.InfiniteLimits))
+		if err != nil {
+			lplogger.Error("create infinite limiter resource manager error: %s", err)
+		} else {
+			opts = append(opts, libp2p.ResourceManager(rm))
+		}
 		opts = append(opts, libp2p.ListenAddrStrings(
 			"/ip6/::/tcp/0",
 			// "/ip6/::/udp/0/quic-v1",
@@ -151,6 +165,10 @@ func NewP2PEngine(seed []byte, logFile, dhtDBPath string, clentMode bool, bf fun
 
 func (pe *P2PEngine) Libp2pHost() host.Host {
 	return pe.rhost
+}
+
+func (pe *P2PEngine) DHT() *dht.IpfsDHT {
+	return pe.dht
 }
 
 func (pe *P2PEngine) Close() error {

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"sync"
+
+	"github.com/txthinking/socks5"
 )
 
 func tunneling(dst, src io.ReadWriter) (err error) {
@@ -29,16 +31,14 @@ func forward(dst, src io.ReadWriter, end func(error)) {
 }
 
 var (
-	// errWritePacketLen = errors.New("write packet len failed")
-	// errReadPacketLen  = errors.New("read packet len failed")
 	errPacketTooLarge = errors.New("packet too large")
 )
 
-type packetStream struct {
+type packetReadWriter struct {
 	rw io.ReadWriter
 }
 
-func (ps *packetStream) Write(p []byte) (n int, err error) {
+func (ps *packetReadWriter) Write(p []byte) (n int, err error) {
 	length := len(p)
 	if length > 0xFFFF {
 		return 0, errPacketTooLarge
@@ -49,10 +49,33 @@ func (ps *packetStream) Write(p []byte) (n int, err error) {
 	return 0, err
 }
 
-func (ps *packetStream) Read(p []byte) (n int, err error) {
+func (ps *packetReadWriter) Read(p []byte) (n int, err error) {
 	var l uint16
 	if err = binary.Read(ps.rw, binary.BigEndian, &l); err == nil {
 		return io.ReadFull(ps.rw, p[:l])
 	}
 	return 0, err
+}
+
+func socks5ReadFrom(p []byte, rd io.Reader) (payload []byte, from string, err error) {
+	n, err := rd.Read(p)
+	if err != nil {
+		return
+	}
+	a, addr, port, err := socks5.ParseBytesAddress(p)
+	if err != nil {
+		return
+	}
+	from = socks5.ToAddress(a, addr, port)
+	payload = p[1+len(addr)+2 : n]
+	return
+}
+
+func socks5WriteTo(p []byte, to string, w io.Writer) (err error) {
+	a, addr, port, err := socks5.ParseAddress(to)
+	if err != nil {
+		return
+	}
+	_, err = w.Write(append(append(append([]byte{a}, addr...), port...), p...))
+	return
 }

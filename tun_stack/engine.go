@@ -58,6 +58,7 @@ func start() error {
 
 func stop() (err error) {
 	_engineMu.Lock()
+	defer _engineMu.Unlock()
 	if !_running {
 		return nil
 	}
@@ -68,7 +69,6 @@ func stop() (err error) {
 		_defaultStack.Close()
 		_defaultStack.Wait()
 	}
-	_engineMu.Unlock()
 	return nil
 }
 
@@ -107,19 +107,12 @@ func SetProxyDialer(dialer proxy.Dialer) {
 	tunnel.T().SetDialer(dialer)
 }
 
-// type TunnelDialer struct{}
-
-// func (td *TunnelDialer) DialContext(ctx context.Context, metadata *M.Metadata) (c net.Conn, err error) {
-// 	if metadata == nil {
-// 		return nil, errors.New("metadata is nil")
-// 	}
-// 	targetAddr := fmt.Sprintf("%s:%d", metadata.DstIP, metadata.DstPort)
-// 	return socks5.DialContext(ctx, d.p2p.Libp2pHost(), d.pid, targetAddr)
-// }
-// func (td *TunnelDialer) DialUDP(metadata *M.Metadata) (_ net.PacketConn, err error) {
-// 	if metadata == nil {
-// 		return nil, errors.New("metadata is nil")
-// 	}
-// 	targetAddr := fmt.Sprintf("%s:%d", metadata.DstIP, metadata.DstPort)
-// 	return socks5.DialUDP(context.Background(), d.p2p.Libp2pHost(), d.pid, targetAddr)
-// }
+func Wait() {
+	_engineMu.Lock()
+	running := _running
+	stack := _defaultStack
+	_engineMu.Unlock()
+	if running {
+		stack.Wait()
+	}
+}

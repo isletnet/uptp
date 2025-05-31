@@ -3,12 +3,11 @@ package socks5
 import (
 	"io"
 	"net"
-	"slices"
 	"strings"
 	"syscall"
 	"time"
 
-	"github.com/isletnet/uptp/logging"
+	"github.com/lesismal/nbio/logging"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -21,7 +20,12 @@ const (
 
 const (
 	CmdConnectUDP byte = 0x04
+	CmdPacketConn byte = 0x05
 )
+
+var AuthFunc = func(*socks5.UserPassNegotiationRequest) bool {
+	return true
+}
 
 func StartServe(h host.Host) {
 	h.SetStreamHandler(protocol.ID(socks5ID), handler)
@@ -40,9 +44,9 @@ func handler(s network.Stream) {
 	}
 }
 
-func socks5RequestConnect(rw io.ReadWriteCloser) error {
-	defer rw.Close()
-	r, err := socks5.NewRequestFrom(rw)
+func socks5RequestConnect(rwc io.ReadWriteCloser) error {
+	defer rwc.Close()
+	req, err := socks5.NewRequestFrom(rwc)
 	if err != nil {
 		return err
 	}
@@ -51,38 +55,41 @@ func socks5RequestConnect(rw io.ReadWriteCloser) error {
 	var sourceConn io.ReadWriter
 	var localAddr string
 
-	switch r.Cmd {
+	switch req.Cmd {
 	case socks5.CmdConnect:
-		conn, err := net.DialTimeout("tcp", r.Address(), time.Second)
+		conn, err := net.DialTimeout("tcp", req.Address(), time.Second)
 		if err != nil {
-			if e := replyErr(r, rw, socks5.RepHostUnreachable); e != nil {
+			if e := replyErr(req, rwc, socks5.RepHostUnreachable); e != nil {
 				return e
 			}
 			return err
 		}
 		localAddr = conn.LocalAddr().String()
 		targetConn = conn
-		sourceConn = rw
+		sourceConn = rwc
 	case CmdConnectUDP:
-		ra, err := net.ResolveUDPAddr("udp", r.Address())
+		ra, err := net.ResolveUDPAddr("udp", req.Address())
 		if err != nil {
-			if e := replyErr(r, rw, socks5.RepAddressNotSupported); e != nil {
+			if e := replyErr(req, rwc, socks5.RepAddressNotSupported); e != nil {
 				return e
 			}
 			return err
 		}
 		conn, err := net.DialUDP("udp", nil, ra)
 		if err != nil {
-			if e := replyErr(r, rw, socks5.RepHostUnreachable); e != nil {
+			if e := replyErr(req, rwc, socks5.RepHostUnreachable); e != nil {
 				return e
 			}
 			return err
 		}
+		logging.Debug("udp connected to %v", req.Address())
 		localAddr = conn.LocalAddr().String()
 		targetConn = conn
-		sourceConn = &packetStream{rw: rw}
+		sourceConn = &packetReadWriter{rw: rwc}
+	case CmdPacketConn:
+		return handleUDPPackConnRequest(req, rwc)
 	default:
-		if e := replyErr(r, rw, socks5.RepCommandNotSupported); e != nil {
+		if e := replyErr(req, rwc, socks5.RepCommandNotSupported); e != nil {
 			return e
 		}
 		return socks5.ErrUnsupportCmd
@@ -91,17 +98,84 @@ func socks5RequestConnect(rw io.ReadWriteCloser) error {
 	defer targetConn.Close()
 	a, addr, port, err := socks5.ParseAddress(localAddr)
 	if err != nil {
-		if e := replyErr(r, rw, socks5.RepHostUnreachable); e != nil {
+		if e := replyErr(req, rwc, socks5.RepHostUnreachable); e != nil {
 			return e
 		}
 		return err
 	}
 
 	reply := socks5.NewReply(socks5.RepSuccess, a, addr, port)
-	if _, err := reply.WriteTo(rw); err != nil {
+	if _, err := reply.WriteTo(rwc); err != nil {
 		return err
 	}
 	return tunneling(targetConn, sourceConn)
+}
+
+func handleUDPPackConnRequest(req *socks5.Request, rw io.ReadWriter) error {
+	ua, err := net.ResolveUDPAddr("udp", req.Address())
+	if err != nil {
+		if e := replyErr(req, rw, socks5.RepAddressNotSupported); e != nil {
+			return e
+		}
+		return err
+	}
+	conn, err := net.ListenUDP("udp", ua)
+	if err != nil {
+		if e := replyErr(req, rw, socks5.RepHostUnreachable); e != nil {
+			return e
+		}
+		return err
+	}
+	defer conn.Close()
+	a, addr, port, err := socks5.ParseAddress(conn.LocalAddr().String())
+	if err != nil {
+		if e := replyErr(req, rw, socks5.RepHostUnreachable); e != nil {
+			return e
+		}
+		reply := socks5.NewReply(socks5.RepSuccess, a, addr, port)
+		if _, err := reply.WriteTo(rw); err != nil {
+			return err
+		}
+		return err
+	}
+	sourceConn := &packetReadWriter{rw: rw}
+	stopped := false
+	go func() {
+		tunnelBuf := make([]byte, 32*1024)
+		for {
+			payload, to, err := socks5ReadFrom(tunnelBuf, sourceConn)
+			if err != nil {
+				logging.Error("udp pack conn read socks5 pack err: %s", err)
+				break
+			}
+			ra, err := net.ResolveUDPAddr("udp", to)
+			if err != nil {
+				logging.Error("udp pack conn parse to addr err: %s", err)
+				continue
+			}
+			_, err = conn.WriteTo(payload, ra)
+			if err != nil {
+				logging.Error("udp pack conn forward to udp err: %s", err)
+				continue
+			}
+		}
+		stopped = true
+	}()
+	connBuf := make([]byte, 32*1024)
+	for !stopped {
+		conn.SetReadDeadline(time.Now().Add(time.Minute * 2))
+		n, ra, err := conn.ReadFrom(connBuf)
+		if err != nil {
+			logging.Error("udp pack conn read err: %s", err)
+			break
+		}
+		err = socks5WriteTo(connBuf[:n], ra.String(), sourceConn)
+		if err != nil {
+			logging.Error("udp pack conn forward to socks err: %s", err)
+			break
+		}
+	}
+	return nil
 }
 
 func socks5Negotiate(rw io.ReadWriter) error {
@@ -110,10 +184,36 @@ func socks5Negotiate(rw io.ReadWriter) error {
 		return err
 	}
 
-	if slices.Contains(rq.Methods, socks5.MethodNone) {
-		rp := socks5.NewNegotiationReply(socks5.MethodNone)
+	found := false
+	for _, method := range rq.Methods {
+		if method == socks5.MethodUsernamePassword {
+			found = true
+			break
+		}
+	}
+	if found {
+		rp := socks5.NewNegotiationReply(socks5.MethodUsernamePassword)
 		_, err = rp.WriteTo(rw)
-		return err
+		if err != nil {
+			return err
+		}
+
+		urq, err := socks5.NewUserPassNegotiationRequestFrom(rw)
+		if err != nil {
+			return err
+		}
+		if !AuthFunc(urq) {
+			urp := socks5.NewUserPassNegotiationReply(socks5.UserPassStatusFailure)
+			if _, err := urp.WriteTo(rw); err != nil {
+				return err
+			}
+			return socks5.ErrUserPassAuth
+		}
+		urp := socks5.NewUserPassNegotiationReply(socks5.UserPassStatusSuccess)
+		if _, err := urp.WriteTo(rw); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	rp := socks5.NewNegotiationReply(socks5.MethodUnsupportAll)

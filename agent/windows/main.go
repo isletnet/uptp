@@ -96,7 +96,7 @@ func main() {
 	workDir := filepath.Dir(exePath)
 
 	// 启动agent
-	if err := agent.Start(workDir); err != nil {
+	if err := agent.Start(workDir, true); err != nil {
 		walk.MsgBox(nil, "错误", fmt.Sprintf("启动Agent失败: %v", err), walk.MsgBoxIconError)
 		return
 	}
