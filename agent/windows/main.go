@@ -120,7 +120,7 @@ func main() {
 				},
 				Columns: []TableViewColumn{
 					{Title: "应用名称", Width: 120},
-					{Title: "Peer名称", Width: 120},
+					{Title: "网关名称", Width: 120},
 					{Title: "协议", Width: 60},
 					{Title: "本地IP", Width: 100},
 					{Title: "本地端口", Width: 80},
@@ -181,13 +181,13 @@ func main() {
 							LineEdit{
 								Text: Bind("Name"),
 							},
-							Label{Text: "PeerID:"},
+							Label{Text: "网关ID:"},
 							LineEdit{
 								Text:      app.PeerID,
 								ReadOnly:  true,
 								TextColor: walk.RGB(100, 100, 100),
 							},
-							Label{Text: "ResID:"},
+							Label{Text: "资源ID:"},
 							LineEdit{
 								Text:      strconv.FormatUint(app.ResID, 10),
 								ReadOnly:  true,
@@ -383,11 +383,11 @@ func main() {
 									LineEdit{
 										Text: Bind("Name"),
 									},
-									Label{Text: "PeerID:"},
+									Label{Text: "网关ID:"},
 									LineEdit{
 										Text: Bind("PeerID"),
 									},
-									Label{Text: "ResID:"},
+									Label{Text: "资源ID:"},
 									LineEdit{
 										Text: Bind("ResID"),
 									},
@@ -532,11 +532,11 @@ func main() {
 									LineEdit{
 										Text: Bind("Name"),
 									},
-									Label{Text: "PeerID:"},
+									Label{Text: "网关ID:"},
 									LineEdit{
 										Text: Bind("PeerID"),
 									},
-									Label{Text: "ResID:"},
+									Label{Text: "资源ID:"},
 									LineEdit{
 										Text: Bind("ResID"),
 									},
