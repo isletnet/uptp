@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/isletnet/service"
-	"github.com/lesismal/nbio/logging"
+	"github.com/isletnet/uptp/logging"
 )
 
 func serviceControl(ctrlComm string, exeAbsPath string, args []string) error {
