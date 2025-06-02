@@ -34,16 +34,17 @@ const (
 	dbKeyToken       = "token"
 	dbKeyBootstraps  = "bootstraps"
 	dbKeyGatewayName = "gateway_name"
+	dbKeyListenPort  = "listen_port"
 )
 
 type Gateway struct {
-	pe  *p2pengine.P2PEngine
-	pm  *portmap.Portmap
-	db  *leveldb.DB
-	pam *PortmapResMgr
+	pe       *p2pengine.P2PEngine
+	pm       *portmap.Portmap
+	db       *leveldb.DB
+	pam      *PortmapResMgr
+	proxySvc *proxyService
 
 	trial bool
-	token uint64
 }
 
 type Config struct {
@@ -116,11 +117,18 @@ func (g *Gateway) Run(conf Config) error {
 		}
 		us = []byte(str)
 	}
-	pe, err := p2pengine.NewP2PEngine(us, filepath.Join(ld, "libp2p.log"), "dht.db", false, g.getBootstraps)
+	listenPort, err := g.getListenPort()
 	if err != nil {
 		return err
 	}
-	logging.Info("libp2p id: %s", pe.Libp2pHost().ID())
+	pe, err := p2pengine.NewP2PEngine(listenPort, us, filepath.Join(ld, "libp2p.log"), "dht.db", false, g.getBootstraps)
+	if err != nil {
+		return err
+	}
+	logging.Info("libp2p start, id: %s, port: %d", pe.Libp2pHost().ID(), pe.GetListenPort())
+	if listenPort != pe.GetListenPort() {
+		g.setListenPort(pe.GetListenPort())
+	}
 	g.pe = pe
 
 	pam, err := NewPortmapResMgr(db)
@@ -129,12 +137,26 @@ func (g *Gateway) Run(conf Config) error {
 	}
 	g.pam = pam
 
+	// 初始化代理服务
+	g.proxySvc = &proxyService{
+		db:     db,
+		config: proxyServiceConfig{},
+	}
+	if err := g.proxySvc.loadConfig(); err != nil {
+		return err
+	}
+
 	g.pm = portmap.NewPortMap(pe.Libp2pHost())
 	g.pm.SetHandleHandshakeFunc(g.handlePortmapHandshake)
 	g.pm.Start(true)
 
 	if g.trial {
-		socks5.StartServe(g.pe.Libp2pHost())
+		socks5.StartServe(g.pe.Libp2pHost(), func(authID uint64) bool {
+			// 试用模式下允许所有连接
+			return true
+		})
+	} else {
+		socks5.StartServe(g.pe.Libp2pHost(), g.proxyAuth)
 	}
 
 	apiSer := &apiServer{}
@@ -145,6 +167,9 @@ func (g *Gateway) Run(conf Config) error {
 }
 
 func (g *Gateway) router(ser *apiServer) {
+	// 初始化文件服务器
+	fileServer := http.FileServer(getWebFS())
+
 	ser.addRoute("/resource", func(r chi.Router) {
 		r.Get("/list", g.listResources)
 		r.Get("/get/{id}", g.getResource)
@@ -158,14 +183,277 @@ func (g *Gateway) router(ser *apiServer) {
 		r.Post("/name", g.updateGatewayName)
 	})
 
-	// 使用嵌入的静态文件
-	fileServer := http.FileServer(getWebFS())
+	ser.addRoute("/proxy", func(r chi.Router) {
+		r.Get("/config", g.getProxyConfig)
+		// r.Get("/token/list", g.getProxyTokens)
+		// r.Post("/token/add", g.addProxyToken)
+		// r.Post("/token/delete", g.deleteProxyToken)
+		r.Post("/dns/set", g.setProxyDNS)
+		// r.Get("/dns/get", g.getProxyDNS)
+		r.Post("/outbound_proxy/set", g.setProxyOBProxy)
+		// r.Get("/outbound_proxy/get", g.getProxyOBProxy)
+	})
+
+	// 静态文件路由
 	ser.addRoute("/", func(r chi.Router) {
 		r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
 			fileServer.ServeHTTP(w, r)
 		})
 	})
 }
+
+func (g *Gateway) proxyAuth(authToken uint64) bool {
+	token, err := g.getToken()
+	if err != nil {
+		logging.Error("proxy auth get token error: %s", err)
+		return false
+	}
+	return token == authToken
+}
+
+func (g *Gateway) getProxyConfig(w http.ResponseWriter, r *http.Request) {
+	rsp := apiResponse{}
+	if g.proxySvc == nil {
+		rsp.Code = 500
+		rsp.Message = "proxy service not initialized"
+		sendAPIRespWithOk(w, rsp)
+		return
+	}
+	config := g.proxySvc.getConfig()
+	rsp.Data = config
+	sendAPIRespWithOk(w, rsp)
+}
+
+// func (g *Gateway) getProxyTokens(w http.ResponseWriter, r *http.Request) {
+// 	rsp := apiResponse{}
+// 	if g.proxySvc == nil {
+// 		rsp.Code = 500
+// 		rsp.Message = "proxy service not initialized"
+// 		sendAPIRespWithOk(w, rsp)
+// 		return
+// 	}
+// 	config := g.proxySvc.getConfig()
+// 	rsp.Data = config.AccessTokens
+// 	sendAPIRespWithOk(w, rsp)
+// }
+
+// func (g *Gateway) addProxyToken(w http.ResponseWriter, r *http.Request) {
+// 	rsp := apiResponse{}
+// 	if g.proxySvc == nil {
+// 		rsp.Code = 500
+// 		rsp.Message = "proxy service not initialized"
+// 		sendAPIRespWithOk(w, rsp)
+// 		return
+// 	}
+
+// 	body, err := io.ReadAll(r.Body)
+// 	if err != nil {
+// 		rsp.Code = 500
+// 		rsp.Message = err.Error()
+// 		sendAPIRespWithOk(w, rsp)
+// 		return
+// 	}
+
+// 	var req struct {
+// 		Token  uint64 `json:"token"`
+// 		Remark string `json:"remark"`
+// 	}
+// 	if err := json.Unmarshal(body, &req); err != nil {
+// 		rsp.Code = 400
+// 		rsp.Message = err.Error()
+// 		sendAPIRespWithOk(w, rsp)
+// 		return
+// 	}
+
+// 	if req.Token == 0 {
+// 		rsp.Code = 400
+// 		rsp.Message = "uid and token are required"
+// 		sendAPIRespWithOk(w, rsp)
+// 		return
+// 	}
+
+// 	if err := g.proxySvc.addToken(req.Token, req.Remark); err != nil {
+// 		rsp.Code = 500
+// 		rsp.Message = err.Error()
+// 		sendAPIRespWithOk(w, rsp)
+// 		return
+// 	}
+
+// 	rsp.Message = "ok"
+// 	sendAPIRespWithOk(w, rsp)
+// }
+
+// func (g *Gateway) deleteProxyToken(w http.ResponseWriter, r *http.Request) {
+// 	rsp := apiResponse{}
+// 	if g.proxySvc == nil {
+// 		rsp.Code = 500
+// 		rsp.Message = "proxy service not initialized"
+// 		sendAPIRespWithOk(w, rsp)
+// 		return
+// 	}
+
+// 	body, err := io.ReadAll(r.Body)
+// 	if err != nil {
+// 		rsp.Code = 500
+// 		rsp.Message = err.Error()
+// 		sendAPIRespWithOk(w, rsp)
+// 		return
+// 	}
+
+// 	var req struct {
+// 		Token uint64 `json:"token"`
+// 	}
+// 	if err := json.Unmarshal(body, &req); err != nil {
+// 		rsp.Code = 400
+// 		rsp.Message = err.Error()
+// 		sendAPIRespWithOk(w, rsp)
+// 		return
+// 	}
+
+// 	if req.Token == 0 {
+// 		rsp.Code = 400
+// 		rsp.Message = "token is required"
+// 		sendAPIRespWithOk(w, rsp)
+// 		return
+// 	}
+
+// 	if err := g.proxySvc.removeToken(req.Token); err != nil {
+// 		rsp.Code = 500
+// 		rsp.Message = err.Error()
+// 		sendAPIRespWithOk(w, rsp)
+// 		return
+// 	}
+
+// 	rsp.Message = "ok"
+// 	sendAPIRespWithOk(w, rsp)
+// }
+
+func (g *Gateway) setProxyDNS(w http.ResponseWriter, r *http.Request) {
+	rsp := apiResponse{}
+	if g.proxySvc == nil {
+		rsp.Code = 500
+		rsp.Message = "proxy service not initialized"
+		sendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		sendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	var req struct {
+		DNS string `json:"dns"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		rsp.Code = 400
+		rsp.Message = err.Error()
+		sendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	if req.DNS == "" {
+		rsp.Code = 400
+		rsp.Message = "dns is required"
+		sendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	if err := g.proxySvc.setDNS(req.DNS); err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		sendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	rsp.Message = "ok"
+	sendAPIRespWithOk(w, rsp)
+}
+
+// func (g *Gateway) getProxyDNS(w http.ResponseWriter, r *http.Request) {
+// 	rsp := apiResponse{}
+// 	if g.proxySvc == nil {
+// 		rsp.Code = 500
+// 		rsp.Message = "proxy service not initialized"
+// 		sendAPIRespWithOk(w, rsp)
+// 		return
+// 	}
+// 	config := g.proxySvc.getConfig()
+// 	rsp.Data = config.DNS
+// 	sendAPIRespWithOk(w, rsp)
+// }
+
+func (g *Gateway) setProxyOBProxy(w http.ResponseWriter, r *http.Request) {
+	rsp := apiResponse{}
+	if g.proxySvc == nil {
+		rsp.Code = 500
+		rsp.Message = "proxy service not initialized"
+		sendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		sendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	var req struct {
+		Addr string `json:"addr"`
+		User string `json:"user"`
+		Pass string `json:"pass"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		rsp.Code = 400
+		rsp.Message = err.Error()
+		sendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	if req.Addr == "" {
+		rsp.Code = 400
+		rsp.Message = "proxy address is required"
+		sendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	if err := g.proxySvc.setProxy(req.Addr, req.User, req.Pass); err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		sendAPIRespWithOk(w, rsp)
+		return
+	}
+	socks5.SetOutboundProxy(req.Addr, req.User, req.Pass)
+
+	rsp.Message = "ok"
+	sendAPIRespWithOk(w, rsp)
+}
+
+// func (g *Gateway) getProxyOBProxy(w http.ResponseWriter, r *http.Request) {
+// 	rsp := apiResponse{}
+// 	if g.proxySvc == nil {
+// 		rsp.Code = 500
+// 		rsp.Message = "proxy service not initialized"
+// 		sendAPIRespWithOk(w, rsp)
+// 		return
+// 	}
+// 	config := g.proxySvc.getConfig()
+// 	rsp.Data = struct {
+// 		Addr string `json:"addr"`
+// 		User string `json:"user"`
+// 		Pass string `json:"pass"`
+// 	}{
+// 		Addr: config.ProxyAddr,
+// 		User: config.ProxyUser,
+// 		Pass: config.ProxyPass,
+// 	}
+// 	sendAPIRespWithOk(w, rsp)
+// }
 
 func (g *Gateway) handlePortmapHandshake(handshake []byte) (network string, addr string, port int, err error) {
 	pmhs := PortmapAppHandshake{}
@@ -411,8 +699,10 @@ var (
 )
 
 type GatewayInfo struct {
-	P2PID string `json:"p2p_id"`
-	Name  string `json:"name"`
+	P2PID string   `json:"p2p_id"`
+	Token types.ID `json:"token"`
+	Name  string   `json:"name"`
+	Port  int      `json:"running_port"`
 }
 
 func Instance() *Gateway {
@@ -437,6 +727,21 @@ func (g *Gateway) setGatewayName(name string) error {
 	return g.db.Put([]byte(dbKeyGatewayName), []byte(name), nil)
 }
 
+func (g *Gateway) getListenPort() (int, error) {
+	v, err := g.db.Get([]byte(dbKeyListenPort), nil)
+	if err != nil {
+		if err == leveldb.ErrNotFound {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return strconv.Atoi(string(v))
+}
+
+func (g *Gateway) setListenPort(port int) error {
+	return g.db.Put([]byte(dbKeyListenPort), []byte(strconv.Itoa(port)), nil)
+}
+
 func (g *Gateway) getGatewayInfo(w http.ResponseWriter, r *http.Request) {
 	rsp := apiResponse{}
 
@@ -447,10 +752,29 @@ func (g *Gateway) getGatewayInfo(w http.ResponseWriter, r *http.Request) {
 		sendAPIRespWithOk(w, rsp)
 		return
 	}
+	token, err := g.getToken()
+	if err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		sendAPIRespWithOk(w, rsp)
+		return
+	}
+	if token == 0 {
+		token = rand.Uint64()
+		err = g.setToken(token)
+		if err != nil {
+			rsp.Code = 500
+			rsp.Message = err.Error()
+			sendAPIRespWithOk(w, rsp)
+			return
+		}
+	}
 
 	info := GatewayInfo{
 		P2PID: g.pe.Libp2pHost().ID().String(),
+		Token: types.ID(token),
 		Name:  name,
+		Port:  g.pe.GetListenPort(),
 	}
 
 	rsp.Data = info

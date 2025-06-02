@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -34,23 +35,35 @@ func stopTun2socks() error {
 	return tunstack.Stop()
 }
 
-func (ag *agent) addProxyGateway(peerID string) error {
+func (ag *agent) addProxyGateway(peerID string, token string) error {
 	pid, err := peer.Decode(peerID)
 	if err != nil {
 		return err
 	}
+	uToken, err := strconv.ParseUint(token, 10, 64)
+	if err != nil {
+		return err
+	}
 	rsp, err := gateway.ResourceAuthorize(ag.p2p.Libp2pHost(), peerID, gateway.AuthorizeReq{
-		ResourceID: types.ID(666666),
+		ResourceID: types.ID(uToken),
 	})
 	if err != nil {
 		return err
 	}
+	if rsp.Err != "" {
+		return errors.New(rsp.Err)
+	}
+	tokenByte := make([]byte, 8)
+	binary.LittleEndian.PutUint64(tokenByte, uToken)
 	return ag.proxyMgr.addProxy(&proxyGateway{
 		peer: socks5.PeerWithAuth{
-			ID: pid,
+			ID:       pid,
+			UserName: tokenByte,
+			Password: tokenByte,
 		},
 		Name:   rsp.NodeName,
 		PeerID: peerID,
+		Token:  uToken,
 	})
 }
 
@@ -67,16 +80,10 @@ func (ag *agent) startTunProxy(tunDevice string, gatewayIdx int) error {
 	if err != nil {
 		return err
 	}
-	u := string(pg.peer.UserName)
-	p := string(pg.peer.Password)
-	if u == "" {
-		u = "a"
-		p = "a"
-	}
-	logging.Info("start proxy to gateway %s", pg.peer.ID.String())
+	logging.Info("start proxy to gateway %s with %x", pg.peer.ID.ShortString(), pg.peer.Password)
 	ag.p2p.DHT().ForceRefresh()
 	tunstack.SetProxyDialer(&proxyDialer{
-		dialer: socks5.NewDialer(ag.p2p.Libp2pHost(), pg.peer.ID, u, p),
+		dialer: socks5.NewDialer(ag.p2p.Libp2pHost(), pg.peer.ID, pg.peer.UserName, pg.peer.Password),
 	})
 	return nil
 }
@@ -126,7 +133,12 @@ func (pm *proxyMgr) loadProxys() error {
 		p.peer.ID, err = peer.Decode(p.PeerID)
 		if err != nil {
 			logging.Error("wrong proxy gateway id")
+			continue
 		}
+		tokenBytes := make([]byte, 8)
+		binary.LittleEndian.PutUint64(tokenBytes, p.Token)
+		p.peer.Password = tokenBytes
+		p.peer.UserName = tokenBytes
 	}
 	return nil
 }
@@ -179,7 +191,7 @@ type proxyGateway struct {
 	peer   socks5.PeerWithAuth `json:"-"`
 	Name   string              `json:"name"`
 	PeerID string              `json:"peer_id"`
-	// Auth   socks5.Auth         `json:"auth"`
+	Token  uint64              `json:"token"`
 }
 
 type proxyDialer struct {

@@ -26,8 +26,8 @@ func GetApps() []App {
 	return agentIns().getApps()
 }
 
-func AddProxyGateway(peerID string) error {
-	return agentIns().addProxyGateway(peerID)
+func AddProxyGateway(peerID string, token string) error {
+	return agentIns().addProxyGateway(peerID, token)
 }
 
 func GetProxyGateways() []string {

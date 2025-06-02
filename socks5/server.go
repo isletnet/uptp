@@ -1,6 +1,7 @@
 package socks5
 
 import (
+	"encoding/binary"
 	"io"
 	"net"
 	"strings"
@@ -10,12 +11,15 @@ import (
 	"github.com/lesismal/nbio/logging"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/txthinking/socks5"
 )
 
 const (
 	socks5ID = "/socks5/1.0.0"
+
+	socks5ConnectSessionKey = "ss5csk"
 )
 
 const (
@@ -23,18 +27,71 @@ const (
 	CmdPacketConn byte = 0x05
 )
 
-var AuthFunc = func(*socks5.UserPassNegotiationRequest) bool {
-	return true
+var authFunc func(pid peer.ID, urq *socks5.UserPassNegotiationRequest) bool
+var preCheckFunc func(pid peer.ID) bool
+
+var AuthFunc func(authID uint64) bool
+
+type socks5SessionInfo struct {
 }
 
-func StartServe(h host.Host) {
+// var proxyDialer proxy.Dialer
+var obDialer outboundDialer = &directDialer{}
+
+type outboundDialer interface {
+	Dial(network, address string) (net.Conn, error)
+	DialUDP(network, address string) (net.Conn, error)
+}
+
+type socks5Dialer struct {
+	c *socks5.Client
+}
+
+func (sd *socks5Dialer) Dial(network, address string) (net.Conn, error) {
+	return sd.c.Dial(network, address)
+}
+
+func (sd *socks5Dialer) DialUDP(network, address string) (net.Conn, error) {
+	return sd.c.Dial(network, address)
+}
+
+type directDialer struct{}
+
+func (dd *directDialer) Dial(network, address string) (net.Conn, error) {
+	return net.DialTimeout(network, address, time.Second*30)
+}
+
+func (dd *directDialer) DialUDP(network, address string) (net.Conn, error) {
+	ra, err := net.ResolveUDPAddr(network, address)
+	if err != nil {
+		return nil, err
+	}
+	return net.DialUDP(network, nil, ra)
+}
+
+func SetOutboundProxy(addr, user, pass string) {
+	if addr == "" {
+		obDialer = &directDialer{}
+		return
+	}
+
+	cli, _ := socks5.NewClient(addr, user, pass, 30, 10)
+	obDialer = &socks5Dialer{
+		c: cli,
+	}
+}
+func StartServe(h host.Host, af func(authID uint64) bool) {
 	h.SetStreamHandler(protocol.ID(socks5ID), handler)
+
+	AuthFunc = af
+	authFunc = socks5Auth(h)
+	preCheckFunc = socks5Precheck(h)
 }
 func StopServe(h host.Host) {
 	h.RemoveStreamHandler(protocol.ID(socks5ID))
 }
 func handler(s network.Stream) {
-	if err := socks5Negotiate(s); shouldLogError(err) {
+	if err := socks5Negotiate(s, preCheckFunc(s.Conn().RemotePeer())); shouldLogError(err) {
 		logging.Error("socks5Negotiate err: %v", err)
 		return
 	}
@@ -57,7 +114,8 @@ func socks5RequestConnect(rwc io.ReadWriteCloser) error {
 
 	switch req.Cmd {
 	case socks5.CmdConnect:
-		conn, err := net.DialTimeout("tcp", req.Address(), time.Second)
+		var conn net.Conn
+		conn, err := obDialer.Dial("tcp", req.Address())
 		if err != nil {
 			if e := replyErr(req, rwc, socks5.RepHostUnreachable); e != nil {
 				return e
@@ -68,14 +126,7 @@ func socks5RequestConnect(rwc io.ReadWriteCloser) error {
 		targetConn = conn
 		sourceConn = rwc
 	case CmdConnectUDP:
-		ra, err := net.ResolveUDPAddr("udp", req.Address())
-		if err != nil {
-			if e := replyErr(req, rwc, socks5.RepAddressNotSupported); e != nil {
-				return e
-			}
-			return err
-		}
-		conn, err := net.DialUDP("udp", nil, ra)
+		conn, err := obDialer.DialUDP("udp", req.Address())
 		if err != nil {
 			if e := replyErr(req, rwc, socks5.RepHostUnreachable); e != nil {
 				return e
@@ -109,6 +160,36 @@ func socks5RequestConnect(rwc io.ReadWriteCloser) error {
 		return err
 	}
 	return tunneling(targetConn, sourceConn)
+}
+
+func socks5Precheck(h host.Host) func(peer.ID) bool {
+	return func(pid peer.ID) bool {
+		v, _ := h.Peerstore().Get(pid, socks5ConnectSessionKey)
+		if v == nil {
+			return true
+		}
+		_, ok := v.(*socks5SessionInfo)
+		if !ok {
+			return true
+		}
+		//todo check session
+		return false
+	}
+}
+
+func socks5Auth(h host.Host) func(pid peer.ID, urq *socks5.UserPassNegotiationRequest) bool {
+	return func(pid peer.ID, urq *socks5.UserPassNegotiationRequest) bool {
+		//todo call authorize
+		if urq.Plen < 8 {
+			return false
+		}
+		authID := binary.LittleEndian.Uint64(urq.Passwd[:8])
+		if !AuthFunc(authID) {
+			return false
+		}
+		h.Peerstore().Put(pid, socks5ConnectSessionKey, &socks5SessionInfo{})
+		return true
+	}
 }
 
 func handleUDPPackConnRequest(req *socks5.Request, rw io.ReadWriter) error {
@@ -178,46 +259,39 @@ func handleUDPPackConnRequest(req *socks5.Request, rw io.ReadWriter) error {
 	return nil
 }
 
-func socks5Negotiate(rw io.ReadWriter) error {
-	rq, err := socks5.NewNegotiationRequestFrom(rw)
+func socks5Negotiate(s network.Stream, needAuth bool) error {
+	_, err := socks5.NewNegotiationRequestFrom(s)
 	if err != nil {
 		return err
 	}
 
-	found := false
-	for _, method := range rq.Methods {
-		if method == socks5.MethodUsernamePassword {
-			found = true
-			break
-		}
-	}
-	if found {
+	if needAuth {
 		rp := socks5.NewNegotiationReply(socks5.MethodUsernamePassword)
-		_, err = rp.WriteTo(rw)
+		_, err = rp.WriteTo(s)
 		if err != nil {
 			return err
 		}
 
-		urq, err := socks5.NewUserPassNegotiationRequestFrom(rw)
+		urq, err := socks5.NewUserPassNegotiationRequestFrom(s)
 		if err != nil {
 			return err
 		}
-		if !AuthFunc(urq) {
+		if !authFunc(s.Conn().RemotePeer(), urq) {
 			urp := socks5.NewUserPassNegotiationReply(socks5.UserPassStatusFailure)
-			if _, err := urp.WriteTo(rw); err != nil {
+			if _, err := urp.WriteTo(s); err != nil {
 				return err
 			}
 			return socks5.ErrUserPassAuth
 		}
 		urp := socks5.NewUserPassNegotiationReply(socks5.UserPassStatusSuccess)
-		if _, err := urp.WriteTo(rw); err != nil {
+		if _, err := urp.WriteTo(s); err != nil {
 			return err
 		}
 		return nil
 	}
 
-	rp := socks5.NewNegotiationReply(socks5.MethodUnsupportAll)
-	_, err = rp.WriteTo(rw)
+	rp := socks5.NewNegotiationReply(socks5.MethodNone)
+	_, err = rp.WriteTo(s)
 	return err
 }
 

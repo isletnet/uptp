@@ -176,6 +176,8 @@ async function loadGatewayInfo() {
         if (data.code === 0) {
             document.getElementById('gatewayId').textContent = data.data.p2p_id;
             document.getElementById('gatewayName').textContent = data.data.name || '未设置';
+            document.getElementById('gatewayPort').textContent = data.data.running_port;
+            document.getElementById('gatewayToken').textContent = data.data.token;
         } else {
             showError('加载网关信息失败：' + data.message);
         }
@@ -252,6 +254,12 @@ function copyToClipboard(text) {
 function copyGatewayId() {
     const gatewayId = document.getElementById('gatewayId').textContent.trim();
     copyToClipboard(gatewayId);
+}
+
+// 复制网关Token到剪贴板
+function copyGatewayToken() {
+    const gatewayToken = document.getElementById('gatewayToken').textContent.trim();
+    copyToClipboard(gatewayToken);
 }
 
 // 显示错误信息

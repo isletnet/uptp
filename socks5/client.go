@@ -21,13 +21,13 @@ type PeerWithAuth struct {
 }
 
 // NewDialer 创建并返回一个新的Dialer实例
-func NewDialer(h host.Host, peerID peer.ID, username, password string) *Dialer {
+func NewDialer(h host.Host, peerID peer.ID, username, password []byte) *Dialer {
 	return &Dialer{
 		h: h,
 		peer: PeerWithAuth{
 			ID:       peerID,
-			UserName: []byte(username),
-			Password: []byte(password),
+			UserName: username,
+			Password: password,
 		},
 	}
 }
@@ -83,7 +83,7 @@ func (d *Dialer) dialContext(ctx context.Context, network, address string) (*str
 	}
 	switch nreply.Method {
 	case socks5.MethodUsernamePassword:
-		urq := socks5.NewUserPassNegotiationRequest([]byte(d.peer.UserName), []byte(d.peer.Password))
+		urq := socks5.NewUserPassNegotiationRequest(d.peer.UserName, d.peer.Password)
 		if _, err := urq.WriteTo(s); err != nil {
 			return nil, err
 		}
@@ -94,6 +94,8 @@ func (d *Dialer) dialContext(ctx context.Context, network, address string) (*str
 		if urp.Status != socks5.UserPassStatusSuccess {
 			return nil, socks5.ErrUserPassAuth
 		}
+	case socks5.MethodNone:
+		// do nothing
 	default:
 		s.Reset()
 		return nil, errors.New("no acceptable authentication methods")

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/isletnet/uptp/logging"
 	"github.com/isletnet/uptp/types"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -44,13 +45,31 @@ func (g *Gateway) authorizeHandler(s network.Stream) {
 	if err != nil {
 		return
 	}
-	gwName, err := g.getGatewayName()
-	if err != nil {
-		return
+	var authRes bool
+
+	if req.ResourceID == types.ID(666666) && g.trial {
+		authRes = true
+	} else if res := g.pam.GetAppByID(req.ResourceID); res.ID == req.ResourceID {
+		authRes = true
+	} else {
+		token, err := g.getToken()
+		if err != nil {
+			logging.Error("authorize handler get token error: %s", err)
+		}
+		if token == uint64(req.ResourceID) {
+			authRes = true
+		}
 	}
-	resp := AuthorizeResp{
-		NodeName: gwName,
-		IsTrial:  req.ResourceID == types.ID(666666),
+	resp := AuthorizeResp{}
+	if authRes {
+		gwName, err := g.getGatewayName()
+		if err != nil {
+			resp.Err = err.Error()
+		}
+		resp.NodeName = gwName
+		resp.IsTrial = req.ResourceID == types.ID(666666)
+	} else {
+		resp.Err = "authorize failed"
 	}
 	data, err := json.Marshal(resp)
 	if err != nil {

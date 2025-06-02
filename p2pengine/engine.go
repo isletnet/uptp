@@ -5,26 +5,34 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	"fmt"
 	"os"
+	"strconv"
 
 	dsync "github.com/ipfs/go-datastore/sync"
 	levelds "github.com/ipfs/go-ds-leveldb"
 	lplog "github.com/ipfs/go-log/v2"
+	"github.com/isletnet/uptp/logging"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 	rhost "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/libp2p/go-libp2p/p2p/net/swarm"
 	"github.com/libp2p/go-libp2p/p2p/security/noise"
+	"github.com/multiformats/go-multiaddr"
 	// "github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/relay"
 )
 
 type P2PEngine struct {
 	rhost *rhost.RoutedHost
 	dht   *dht.IpfsDHT
+
+	realPort int
 
 	// rs    *relay.Relay
 	// relayPeer peer.ID
@@ -44,7 +52,7 @@ type P2PEngine struct {
 
 var lplogger = lplog.Logger("uptp")
 
-func NewP2PEngine(seed []byte, logFile, dhtDBPath string, clentMode bool, bf func() []string) (*P2PEngine, error) {
+func NewP2PEngine(listenPort int, seed []byte, logFile, dhtDBPath string, clentMode bool, bf func() []string) (*P2PEngine, error) {
 	os.Remove(logFile)
 	if len(seed) < ed25519.SeedSize {
 		return nil, errors.New("wrong seed")
@@ -101,7 +109,7 @@ func NewP2PEngine(seed []byte, logFile, dhtDBPath string, clentMode bool, bf fun
 			opts = append(opts, libp2p.ResourceManager(rm))
 		}
 		opts = append(opts, libp2p.ListenAddrStrings(
-			"/ip6/::/tcp/0",
+			fmt.Sprintf("/ip6/::/tcp/%d", listenPort),
 			// "/ip6/::/udp/0/quic-v1",
 		))
 	}
@@ -109,6 +117,24 @@ func NewP2PEngine(seed []byte, logFile, dhtDBPath string, clentMode bool, bf fun
 	h, err = libp2p.New(opts...)
 	if err != nil {
 		return nil, err
+	}
+	var realPort int
+	for _, addr := range h.Addrs() {
+		// 检查是否为 IPv6 地址
+		_, err := addr.ValueForProtocol(multiaddr.P_IP6)
+		if err != nil {
+			continue // 不是 IPv6 地址
+		}
+
+		// 提取 TCP 端口
+		if tcp, err := addr.ValueForProtocol(multiaddr.P_TCP); err == nil {
+			realPort, err = strconv.Atoi(tcp)
+			if err != nil {
+				logging.Error("parse port from multi addr %s error: %s", addr.String(), err)
+				continue
+			}
+			break
+		}
 	}
 
 	// rs, err := relay.New(h, relay.WithInfiniteLimits(), relay.WithResources(GetRelayResources()))
@@ -158,13 +184,38 @@ func NewP2PEngine(seed []byte, logFile, dhtDBPath string, clentMode bool, bf fun
 
 	ret.rhost = routedHost
 	ret.dht = kademliaDHT
+	ret.realPort = realPort
+	go ret.listenAndHandleConnectEvent()
 	// ret.rs = rs
 	// go ret.background()
 	return &ret, nil
 }
 
+func (pe *P2PEngine) listenAndHandleConnectEvent() {
+	sub, err := pe.Libp2pHost().EventBus().Subscribe(new(event.EvtPeerConnectednessChanged))
+	if err != nil {
+		lplogger.Error("subscribe connectedness change event error: %s", err)
+	}
+	for {
+		evt := <-sub.Out()
+		connEvt := evt.(event.EvtPeerConnectednessChanged)
+		if connEvt.Connectedness == network.Connected {
+			lplogger.Debug("peer %s connected", connEvt.Peer.ShortString())
+			// pe.Libp2pHost().ConnManager().Protect(connEvt.Peer, "connected")
+		} else {
+			lplogger.Debug("peer %s disconnected", connEvt.Peer.ShortString())
+			pe.Libp2pHost().Peerstore().RemovePeer(connEvt.Peer)
+		}
+	}
+
+}
+
 func (pe *P2PEngine) Libp2pHost() host.Host {
 	return pe.rhost
+}
+
+func (pe *P2PEngine) GetListenPort() int {
+	return pe.realPort
 }
 
 func (pe *P2PEngine) DHT() *dht.IpfsDHT {
