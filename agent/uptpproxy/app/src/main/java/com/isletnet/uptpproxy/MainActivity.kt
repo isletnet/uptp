@@ -5,7 +5,6 @@ import android.Manifest
 import android.content.pm.ApplicationInfo
 import android.widget.EditText
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.widget.SearchView
 import org.json.JSONArray
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -32,10 +31,10 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import android.view.Window
+import android.widget.AdapterView
+import androidx.core.content.edit
 
 class MainActivity : AppCompatActivity() {
-    private var isVpnRunning = false
     
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.main_menu, menu)
@@ -113,7 +112,7 @@ class MainActivity : AppCompatActivity() {
         })
         
         // 创建并显示对话框
-        val dialog = AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this, R.style.ThemeOverlay_AppCompat_Dark)
             .setTitle(R.string.select_apps_title)
             .setView(dialogView)
             .create()
@@ -140,15 +139,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun showAddGatewayDialog() {
         val dialogView = layoutInflater.inflate(R.layout.dialog_add_gateway, null)
-        val input = dialogView.findViewById<EditText>(R.id.gateway_input)
-        val dialog = AlertDialog.Builder(this)
+        val gatewayInput = dialogView.findViewById<EditText>(R.id.gateway_input)
+        val tokenInput = dialogView.findViewById<EditText>(R.id.token_input)
+        val dialog = AlertDialog.Builder(this, R.style.ThemeOverlay_AppCompat_Dark)
             .setTitle("添加网关")
             .setView(dialogView)
             .setPositiveButton("确定") { _, _ ->
-                val gateway = input.text.toString()
+                val gateway = gatewayInput.text.toString()
+                val token = tokenInput.text.toString()
                 if (gateway.isNotBlank()) {
                     try {
-                        Agent.addProxyGateway(gateway)
+                        Agent.addProxyGateway(gateway, token)
                     } catch (e: Exception) {
                         showError("添加网关失败: ${e.message}")
                     }
@@ -175,6 +176,8 @@ class MainActivity : AppCompatActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        lastSelectedGatewayPosition = getSharedPreferences("vpn_prefs", Context.MODE_PRIVATE)
+            .getInt("last_selected_gateway_position", 0)
         setContentView(R.layout.activity_main)
         
         // 强制设置状态栏为黑色
@@ -184,6 +187,17 @@ class MainActivity : AppCompatActivity() {
         vpnButton = findViewById<Button>(R.id.vpn_button)
         statusText = findViewById<TextView>(R.id.status_text)
         gatewaySpinner = findViewById<Spinner>(R.id.spinner)
+
+        gatewaySpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>, view: View, position: Int, id: Long) {
+                lastSelectedGatewayPosition = position
+                getSharedPreferences("vpn_prefs", Context.MODE_PRIVATE).edit {
+                    putInt("last_selected_gateway_position", position)
+                }
+            }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>) {}
+        }
+
         updateButtonText()
         
         vpnButton.setOnClickListener {
@@ -252,9 +266,13 @@ class MainActivity : AppCompatActivity() {
                 )
                 adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
                 gatewaySpinner.adapter = adapter
-
+                // 使用已设置的监听器
                 if (gatewayList.isNotEmpty()) {
-                    gatewaySpinner.setSelection(0)
+                    if (gatewayList.size > lastSelectedGatewayPosition) {
+                        gatewaySpinner.setSelection(lastSelectedGatewayPosition)
+                    } else{
+                        gatewaySpinner.setSelection(0)
+                    }
                 }
             }
         }catch (e: Exception){
@@ -262,6 +280,8 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private var lastSelectedGatewayPosition = 0
+    
     private fun isNetworkAvailable(): Boolean {
         val connectivityManager = getSystemService(ConnectivityManager::class.java)
         val network = connectivityManager.activeNetwork ?: return false

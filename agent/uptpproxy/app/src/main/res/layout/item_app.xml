@@ -22,14 +22,15 @@
             android:id="@+id/appName"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="16sp" />
+            android:textSize="16sp"
+            android:textColor="@color/white" />
 
         <TextView
             android:id="@+id/packageName"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textSize="12sp"
-            android:textColor="?android:attr/textColorSecondary" />
+            android:textColor="@color/gray_300" />
     </LinearLayout>
 
     <CheckBox

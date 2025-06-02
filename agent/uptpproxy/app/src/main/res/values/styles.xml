@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base application theme -->
+    <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
+        <item name="colorPrimary">@color/purple_500</item>
+        <item name="colorPrimaryDark">@color/purple_700</item>
+        <item name="colorAccent">@color/teal_200</item>
+    </style>
+
+    <!-- Dark theme overlay for dialogs -->
+    <style name="ThemeOverlay.AppCompat.Dark" parent="ThemeOverlay.MaterialComponents.Dark">
+        <item name="android:textColorPrimary">@color/white</item>
+        <item name="android:textColorSecondary">@color/gray_300</item>
+        <item name="android:background">@color/dark_primary</item>
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.AppCompat.Button.Colored</item>
+        <item name="buttonBarNegativeButtonStyle">@style/Widget.AppCompat.Button.Colored</item>
+    </style>
+</resources>
