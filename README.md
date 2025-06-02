@@ -1,34 +1,17 @@
-# UPTP (Universal P2P Transport Protocol)
+# UPTP 旨在打造一个低成本的、通用的点对点通信框架
+现在的网络环境特别复杂，各种类型的NAT设备、防火墙设备等原因，导致点对点通信变得异常困难，目前一劳永逸的通用方案就是使用云服务器做中转。这种通用的代价就是昂贵的流量费用和带宽限制，有时还不可避免的带来高延时。
 
-UPTP是基于IPv6的内网穿透工具，无需自建云服务器、无需域名、无需DDNS，即可利用家庭宽带的IPv6能力实现内网穿透。
+实际上有不少网络环境是支持P2P通信的，比如IPv6网络、部分NAT类型等。UPTP 的目标就是尽可能的利用这些网络环境，打造一个低成本的、通用的点对点通信框架，隐藏复杂的技术细节，向上层应用提供简单的通信接口，让开发者可以专注于业务逻辑。
 
-## 项目特点
+打算分几个阶段实现,目前处于第一阶段
+1、基于IPv6网络实现P2P通信
+2、支持部分NAT类型下的P2P通信
+3、支持中继服务器转发
 
-- 纯IPv6 P2P连接，无需中转服务器
-- 图形化界面操作简单
-- 低延迟、高带宽传输
 
-## 网络架构
-![架构图](docs/images/architecture.png)
-
-## 快速开始
-
-### 代码编译
-
-1. 确保已安装Go 1.23+环境
-2. 克隆项目仓库:
-   ```bash
-   git clone https://github.com/your-repo/uptp.git
-   ```
-3. 编译windows agent:
-   ```bash
-   cd uptp
-   env CGO_ENABLED=0 GOOS=windows go build -ldflags '-w -c -H windowsgui' -o dist/uptp-agent_windows-amd64.exe ./agent/windows
-   ```
-4. 编译gateway：
-   ```bash
-   env CGO_ENABLED=0 GOOS=linux go build -ldflags '-w -c' -o dist/uptp-gateway_linux-amd64 ./gateway/cmd
-   ```
+另外，本项目不仅做框架，还一边做应用（自己相当于框架的第一个用户），目前实现的应用：
+1、点对点的端口映射
+2、手机应用网关
 
 ## 快速体验
 
@@ -36,11 +19,14 @@ UPTP是基于IPv6的内网穿透工具，无需自建云服务器、无需域名
 ```bash
 # Gateway 端启动（试用模式）
 ./uptp-gateway -trial -v
+
+# Gateway 安装并启动（普通模式）
+sudo ./uptp-gateway install
 ```
 gateway web控制台：http://127.0.0.1:3000/
 ![gateway web控制台](docs/images/gateway-web.png)
 
-### 2. Android APP端是透明代理模式。不需要建立资源
+### 2. Android 应用网助手
 
 下载并安装并打开APP
 ![app main](docs/images/android_app1.png)
@@ -60,24 +46,6 @@ gateway web控制台：http://127.0.0.1:3000/
 ![speed test](docs/images/android_app4.jpg)
 
 
-### 2. Windows端是端口映射模式，需要先在网关建立端口映射资源
-
-运行uptp-agent.exe进入程序界面，添加应用即可
-![windows main ui](docs/images/agent-win.png)
-
-
-第三方应用测试端口映射
-
-![windows test](docs/images/app-test-3389.png)
-
-
-## 高级配置
-
-### gateway端安装
-```bash
-# Linux系统服务安装
-sudo ./uptp-gateway install
-```
 
 
 ## 常见问题
