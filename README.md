@@ -43,24 +43,33 @@ gateway web控制台：http://127.0.0.1:3000/
 ### 2. Android APP端是透明代理模式。不需要建立资源
 
 下载并安装并打开APP
-![主界面](docs/images/android_app1.png)
+![app main](docs/images/android_app1.png)
 
-![添加网关，填写网关ID、访问Token](docs/images/android_app2.jpg)
 
-![选择要访问网关的APP，可以搜索过滤](docs/images/android_app3.png)
+添加网关，填写网关控制台的网关ID、访问Token
+![add gateway](docs/images/android_app2.jpg)
 
-![连接完成后，上面选中的APP即可访问网关所在的网络资源](docs/images/android_app5.jpg)
 
-![速度也是杠杠的](docs/images/android_app4.jpg)
+选择要访问网关的APP，可以搜索过滤
+![select app](docs/images/android_app3.png)
+
+
+连接完成后，上面选中的APP即可访问网关所在的网络资源，速度也杠杠的
+![access test](docs/images/android_app5.jpg)
+
+![speed test](docs/images/android_app4.jpg)
 
 
 ### 2. Windows端是端口映射模式，需要先在网关建立端口映射资源
 
 运行uptp-agent.exe进入程序界面，添加应用即可
+![windows main ui](docs/images/agent-win.png)
 
-![windows客户端主界面](docs/images/agent-win.png)
 
-![第三方应用测试端口映射，能成功连接](docs/images/app-test-3389.png)
+第三方应用测试端口映射
+
+![windows test](docs/images/app-test-3389.png)
+
 
 ## 高级配置
 
