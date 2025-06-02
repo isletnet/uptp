@@ -46,6 +46,7 @@ func main() {
 		// tmpLog.Info("run in daemon mode")
 		gLog := logger.NewLogger(baseDir, "daemon", rc.logLevel, 1024*1024, logger.LogFile)
 		logging.SetLogger(gLog)
+		os.Chdir(baseDir)
 		daemonStart()
 		return
 	}
