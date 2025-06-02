@@ -52,7 +52,7 @@ gateway web控制台：http://127.0.0.1:3000/
 ### gateway端安装
 ```bash
 # Linux系统服务安装
-sudo ./uptp-gateway -install
+sudo ./uptp-gateway install
 ```
 
 
