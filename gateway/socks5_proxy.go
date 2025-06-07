@@ -10,6 +10,7 @@ import (
 
 type socksOutbound struct {
 	ID    types.ID `json:"id"`
+	Open  bool     `json:"open"`
 	Peer  string   `json:"peer"`
 	Token types.ID `json:"token"`
 	Route string   `json:"route"`
@@ -19,15 +20,16 @@ var (
 	keySocksOutbound = []byte("socks_outbound")
 )
 
-type socksOutboundsManager struct {
+type socks5ProxyManager struct {
 	db *leveldb.DB
 
-	mtx       sync.Mutex
+	mtx sync.Mutex
+
 	outbounds map[types.ID]socksOutbound
 }
 
-func NewSocksOutboundsManager(db *leveldb.DB) (*socksOutboundsManager, error) {
-	mgr := &socksOutboundsManager{
+func NewSocksOutboundsManager(db *leveldb.DB) (*socks5ProxyManager, error) {
+	mgr := &socks5ProxyManager{
 		db: db,
 	}
 	err := mgr.loadOutbounds()
@@ -37,7 +39,7 @@ func NewSocksOutboundsManager(db *leveldb.DB) (*socksOutboundsManager, error) {
 	return mgr, nil
 }
 
-func (mgr *socksOutboundsManager) AddOutbound(outbound *socksOutbound) error {
+func (mgr *socks5ProxyManager) AddOutbound(outbound *socksOutbound) error {
 	mgr.mtx.Lock()
 	defer mgr.mtx.Unlock()
 	if mgr.outbounds == nil {
@@ -47,7 +49,7 @@ func (mgr *socksOutboundsManager) AddOutbound(outbound *socksOutbound) error {
 	return mgr.saveOutbounds()
 }
 
-func (mgr *socksOutboundsManager) UpdateOutbound(outbound *socksOutbound) error {
+func (mgr *socks5ProxyManager) UpdateOutbound(outbound *socksOutbound) error {
 	mgr.mtx.Lock()
 	defer mgr.mtx.Unlock()
 	if mgr.outbounds == nil {
@@ -57,7 +59,7 @@ func (mgr *socksOutboundsManager) UpdateOutbound(outbound *socksOutbound) error 
 	return mgr.saveOutbounds()
 }
 
-func (mgr *socksOutboundsManager) DeleteOutbound(id types.ID) error {
+func (mgr *socks5ProxyManager) DeleteOutbound(id types.ID) error {
 	mgr.mtx.Lock()
 	defer mgr.mtx.Unlock()
 	if mgr.outbounds == nil {
@@ -67,7 +69,7 @@ func (mgr *socksOutboundsManager) DeleteOutbound(id types.ID) error {
 	return mgr.saveOutbounds()
 }
 
-func (mgr *socksOutboundsManager) GetOutbound(id types.ID) socksOutbound {
+func (mgr *socks5ProxyManager) GetOutbound(id types.ID) socksOutbound {
 	mgr.mtx.Lock()
 	defer mgr.mtx.Unlock()
 	if mgr.outbounds == nil {
@@ -76,7 +78,7 @@ func (mgr *socksOutboundsManager) GetOutbound(id types.ID) socksOutbound {
 	return mgr.outbounds[id]
 }
 
-func (mgr *socksOutboundsManager) ListOutbounds() []socksOutbound {
+func (mgr *socks5ProxyManager) ListOutbounds() []socksOutbound {
 	mgr.mtx.Lock()
 	defer mgr.mtx.Unlock()
 	var outbounds []socksOutbound
@@ -86,7 +88,7 @@ func (mgr *socksOutboundsManager) ListOutbounds() []socksOutbound {
 	return outbounds
 }
 
-func (mgr *socksOutboundsManager) loadOutbounds() error {
+func (mgr *socks5ProxyManager) loadOutbounds() error {
 	mgr.mtx.Lock()
 	defer mgr.mtx.Unlock()
 	v, err := mgr.db.Get(keySocksOutbound, nil)
@@ -103,7 +105,7 @@ func (mgr *socksOutboundsManager) loadOutbounds() error {
 	return nil
 }
 
-func (mgr *socksOutboundsManager) saveOutbounds() error {
+func (mgr *socks5ProxyManager) saveOutbounds() error {
 	if mgr.outbounds == nil {
 		return nil
 	}

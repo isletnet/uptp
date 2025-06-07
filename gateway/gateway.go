@@ -199,7 +199,7 @@ func (g *Gateway) router(ser *apiutil.ApiServer) {
 		})
 	})
 
-	ser.AddRoute("/proxy", func(r chi.Router) {
+	ser.AddRoute("/proxy_server", func(r chi.Router) {
 		r.Get("/config", g.getProxyConfig)
 		// r.Get("/token/list", g.getProxyTokens)
 		// r.Post("/token/add", g.addProxyToken)
