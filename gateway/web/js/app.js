@@ -199,11 +199,13 @@ async function upgradeGateway() {
             if (data.message.includes('latest')) {
                 alert('当前已是最新版本');
             } else if (data.message.includes('success')) {
-                alert('升级成功，请重启网关');
+                if (confirm('升级成功，是否立即重启网关？')) {
+                    fetch('/gateway/restart', {method: 'GET'});
+                    alert('正在重启网关，请稍后手动刷新网页查看...');
+                }
             } else {
                 alert(data.message || '升级操作已完成');
             }
-            loadGatewayInfo();
         } else {
             showError(data.message || '升级失败');
         }
