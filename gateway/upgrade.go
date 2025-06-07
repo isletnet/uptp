@@ -130,7 +130,7 @@ func (g *Gateway) upgradeMyself(w http.ResponseWriter, r *http.Request) {
 		rsp.Message = "chmod executable failed"
 		return
 	}
-	rsp.Message = "upgrade gateway success and then restart"
+	rsp.Message = "upgrade gateway success, please restart"
 	apiutil.SendAPIRespWithOk(w, rsp)
 }
 

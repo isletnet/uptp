@@ -178,11 +178,37 @@ async function loadGatewayInfo() {
             document.getElementById('gatewayName').textContent = data.data.name || '未设置';
             document.getElementById('gatewayPort').textContent = data.data.running_port;
             document.getElementById('gatewayToken').textContent = data.data.token;
+            document.getElementById('gatewayVersion').textContent = data.data.version || '未知';
         } else {
             showError('加载网关信息失败：' + data.message);
         }
     } catch (error) {
         showError('加载网关信息失败：' + error.message);
+    }
+}
+
+// 检查更新
+async function upgradeGateway() {
+    try {
+        const response = await fetch('/upgrade/myself', {
+            method: 'GET'
+        });
+        
+        const data = await response.json();
+        if (data.code === 0) {
+            if (data.message.includes('latest')) {
+                alert('当前已是最新版本');
+            } else if (data.message.includes('success')) {
+                alert('升级成功，请重启网关');
+            } else {
+                alert(data.message || '升级操作已完成');
+            }
+            loadGatewayInfo();
+        } else {
+            showError(data.message || '升级失败');
+        }
+    } catch (error) {
+        showError('请求失败：' + error.message);
     }
 }
 

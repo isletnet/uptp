@@ -23,6 +23,7 @@ import (
 
 	"github.com/go-chi/chi"
 	"github.com/google/uuid"
+	"github.com/isletnet/uptp/common"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/errors"
 	"github.com/syndtr/goleveldb/leveldb/opt"
@@ -192,6 +193,10 @@ func (g *Gateway) router(ser *apiutil.ApiServer) {
 	ser.AddRoute("/gateway", func(r chi.Router) {
 		r.Get("/info", g.getGatewayInfo)
 		r.Post("/name", g.updateGatewayName)
+		r.Get("/restart", func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte("ok"))
+			os.Exit(0)
+		})
 	})
 
 	ser.AddRoute("/proxy", func(r chi.Router) {
@@ -729,10 +734,11 @@ var (
 )
 
 type GatewayInfo struct {
-	P2PID string   `json:"p2p_id"`
-	Token types.ID `json:"token"`
-	Name  string   `json:"name"`
-	Port  int      `json:"running_port"`
+	P2PID   string   `json:"p2p_id"`
+	Token   types.ID `json:"token"`
+	Name    string   `json:"name"`
+	Port    int      `json:"running_port"`
+	Version string   `json:"version"`
 }
 
 func Instance() *Gateway {
@@ -801,10 +807,11 @@ func (g *Gateway) getGatewayInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	info := GatewayInfo{
-		P2PID: g.pe.Libp2pHost().ID().String(),
-		Token: types.ID(token),
-		Name:  name,
-		Port:  g.pe.GetListenPort(),
+		P2PID:   g.pe.Libp2pHost().ID().String(),
+		Token:   types.ID(token),
+		Name:    name,
+		Port:    g.pe.GetListenPort(),
+		Version: common.GatewayVersion,
 	}
 
 	rsp.Data = info

@@ -55,6 +55,15 @@
                             <label class="form-label text-muted small mb-1">监听端口</label>
                             <div class="fw-bold" id="gatewayPort"></div>
                         </div>
+                        <div class="mb-3">
+                            <label class="form-label text-muted small mb-1">当前版本</label>
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="fw-bold" id="gatewayVersion"></div>
+                                <button id="upgradeBtn" class="btn btn-sm btn-outline-primary" onclick="upgradeGateway()">
+                                    <i class="bi bi-arrow-repeat"></i> 检查更新
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
