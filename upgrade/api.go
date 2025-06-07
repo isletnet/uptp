@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"runtime"
+	"time"
 
 	"github.com/isletnet/uptp/apiutil.go"
 	p2phttp "github.com/libp2p/go-libp2p-http"
@@ -43,5 +44,7 @@ func DownloadGatewayAgentApk(h host.Host) (*http.Response, error) {
 	return p2pHttpClient(h).Get(fmt.Sprintf("libp2p://%s/gateway-agent.apk", UpgradeServer))
 }
 func DownloadLatestGateway(h host.Host, downloadServer string, downloadPath string) (*http.Response, error) {
-	return p2pHttpClient(h).Get(fmt.Sprintf("libp2p://%s/%s", downloadServer, downloadPath))
+	client := p2pHttpClient(h)
+	client.Timeout = 30 * time.Second
+	return client.Get(fmt.Sprintf("libp2p://%s/%s", downloadServer, downloadPath))
 }
