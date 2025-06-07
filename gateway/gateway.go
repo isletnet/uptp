@@ -199,7 +199,7 @@ func (g *Gateway) router(ser *apiutil.ApiServer) {
 		})
 	})
 
-	ser.AddRoute("/proxy_server", func(r chi.Router) {
+	ser.AddRoute("/proxy_service", func(r chi.Router) {
 		r.Get("/config", g.getProxyConfig)
 		// r.Get("/token/list", g.getProxyTokens)
 		// r.Post("/token/add", g.addProxyToken)
@@ -208,6 +208,9 @@ func (g *Gateway) router(ser *apiutil.ApiServer) {
 		// r.Get("/dns/get", g.getProxyDNS)
 		r.Post("/outbound_proxy/set", g.setProxyOBProxy)
 		// r.Get("/outbound_proxy/get", g.getProxyOBProxy)
+	})
+	ser.AddRoute("/proxy_client", func(r chi.Router) {
+
 	})
 	ser.AddRoute("/upgrade", func(r chi.Router) {
 		r.Get("/myself", g.upgradeMyself)
