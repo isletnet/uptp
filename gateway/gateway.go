@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/isletnet/uptp/apiutil.go"
 	"github.com/isletnet/uptp/logger"
 	"github.com/isletnet/uptp/logging"
 	"github.com/isletnet/uptp/p2pengine"
@@ -66,13 +68,17 @@ func (g *Gateway) SetTrialMod() {
 }
 
 func (g *Gateway) Run(conf Config) error {
+	exePath, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	bak := exePath + ".bak"
+	if _, err := os.Stat(bak); os.IsExist(err) {
+		os.Remove(bak)
+	}
 	wd := conf.Workdir
 	if wd == "" {
-		e, err := os.Executable()
-		if err != nil {
-			return err
-		}
-		wd = filepath.Dir(e)
+		wd = filepath.Dir(exePath)
 	}
 	os.Chdir(wd)
 	ld := conf.LogDir
@@ -159,18 +165,23 @@ func (g *Gateway) Run(conf Config) error {
 		socks5.StartServe(g.pe.Libp2pHost(), g.proxyAuth)
 	}
 
-	apiSer := &apiServer{}
+	apiSer := &apiutil.ApiServer{}
 	g.router(apiSer)
 	g.authorize()
 
-	return apiSer.serve()
+	ln, err := net.Listen("tcp", "0.0.0.0:3000")
+	if err != nil {
+		return err
+	}
+
+	return apiSer.Serve(ln)
 }
 
-func (g *Gateway) router(ser *apiServer) {
+func (g *Gateway) router(ser *apiutil.ApiServer) {
 	// 初始化文件服务器
 	fileServer := http.FileServer(getWebFS())
 
-	ser.addRoute("/resource", func(r chi.Router) {
+	ser.AddRoute("/resource", func(r chi.Router) {
 		r.Get("/list", g.listResources)
 		r.Get("/get/{id}", g.getResource)
 		r.Post("/add", g.addResource)
@@ -178,12 +189,12 @@ func (g *Gateway) router(ser *apiServer) {
 		r.Post("/delete", g.deleteResource)
 	})
 
-	ser.addRoute("/gateway", func(r chi.Router) {
+	ser.AddRoute("/gateway", func(r chi.Router) {
 		r.Get("/info", g.getGatewayInfo)
 		r.Post("/name", g.updateGatewayName)
 	})
 
-	ser.addRoute("/proxy", func(r chi.Router) {
+	ser.AddRoute("/proxy", func(r chi.Router) {
 		r.Get("/config", g.getProxyConfig)
 		// r.Get("/token/list", g.getProxyTokens)
 		// r.Post("/token/add", g.addProxyToken)
@@ -193,13 +204,32 @@ func (g *Gateway) router(ser *apiServer) {
 		r.Post("/outbound_proxy/set", g.setProxyOBProxy)
 		// r.Get("/outbound_proxy/get", g.getProxyOBProxy)
 	})
+	ser.AddRoute("/upgrade", func(r chi.Router) {
+		r.Get("/myself", g.upgradeMyself)
+		r.Get("/download/gateway_agent", g.downloadAPK)
+	})
 
 	// 静态文件路由
-	ser.addRoute("/", func(r chi.Router) {
+	ser.AddRoute("/", func(r chi.Router) {
 		r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
 			fileServer.ServeHTTP(w, r)
 		})
 	})
+}
+
+func transferHTTP(w http.ResponseWriter, resp *http.Response) {
+	// Copy any headers
+	for k, v := range resp.Header {
+		for _, s := range v {
+			w.Header().Add(k, s)
+		}
+	}
+
+	// Write response status and headers
+	w.WriteHeader(resp.StatusCode)
+
+	// Finally copy the body
+	io.Copy(w, resp.Body)
 }
 
 func (g *Gateway) proxyAuth(authToken uint64) bool {
@@ -212,16 +242,16 @@ func (g *Gateway) proxyAuth(authToken uint64) bool {
 }
 
 func (g *Gateway) getProxyConfig(w http.ResponseWriter, r *http.Request) {
-	rsp := apiResponse{}
+	rsp := apiutil.ApiResponse{}
 	if g.proxySvc == nil {
 		rsp.Code = 500
 		rsp.Message = "proxy service not initialized"
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 	config := g.proxySvc.getConfig()
 	rsp.Data = config
-	sendAPIRespWithOk(w, rsp)
+	apiutil.SendAPIRespWithOk(w, rsp)
 }
 
 // func (g *Gateway) getProxyTokens(w http.ResponseWriter, r *http.Request) {
@@ -329,11 +359,11 @@ func (g *Gateway) getProxyConfig(w http.ResponseWriter, r *http.Request) {
 // }
 
 func (g *Gateway) setProxyDNS(w http.ResponseWriter, r *http.Request) {
-	rsp := apiResponse{}
+	rsp := apiutil.ApiResponse{}
 	if g.proxySvc == nil {
 		rsp.Code = 500
 		rsp.Message = "proxy service not initialized"
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
@@ -341,7 +371,7 @@ func (g *Gateway) setProxyDNS(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
@@ -351,26 +381,26 @@ func (g *Gateway) setProxyDNS(w http.ResponseWriter, r *http.Request) {
 	if err := json.Unmarshal(body, &req); err != nil {
 		rsp.Code = 400
 		rsp.Message = err.Error()
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
 	if req.DNS == "" {
 		rsp.Code = 400
 		rsp.Message = "dns is required"
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
 	if err := g.proxySvc.setDNS(req.DNS); err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
 	rsp.Message = "ok"
-	sendAPIRespWithOk(w, rsp)
+	apiutil.SendAPIRespWithOk(w, rsp)
 }
 
 // func (g *Gateway) getProxyDNS(w http.ResponseWriter, r *http.Request) {
@@ -387,11 +417,11 @@ func (g *Gateway) setProxyDNS(w http.ResponseWriter, r *http.Request) {
 // }
 
 func (g *Gateway) setProxyOBProxy(w http.ResponseWriter, r *http.Request) {
-	rsp := apiResponse{}
+	rsp := apiutil.ApiResponse{}
 	if g.proxySvc == nil {
 		rsp.Code = 500
 		rsp.Message = "proxy service not initialized"
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
@@ -399,7 +429,7 @@ func (g *Gateway) setProxyOBProxy(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
@@ -411,27 +441,27 @@ func (g *Gateway) setProxyOBProxy(w http.ResponseWriter, r *http.Request) {
 	if err := json.Unmarshal(body, &req); err != nil {
 		rsp.Code = 400
 		rsp.Message = err.Error()
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
 	if req.Addr == "" {
 		rsp.Code = 400
 		rsp.Message = "proxy address is required"
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
 	if err := g.proxySvc.setProxy(req.Addr, req.User, req.Pass); err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 	socks5.SetOutboundProxy(req.Addr, req.User, req.Pass)
 
 	rsp.Message = "ok"
-	sendAPIRespWithOk(w, rsp)
+	apiutil.SendAPIRespWithOk(w, rsp)
 }
 
 // func (g *Gateway) getProxyOBProxy(w http.ResponseWriter, r *http.Request) {
@@ -479,15 +509,15 @@ func (g *Gateway) handlePortmapHandshake(handshake []byte) (network string, addr
 }
 
 func (g *Gateway) listResources(w http.ResponseWriter, r *http.Request) {
-	rsp := apiResponse{}
+	rsp := apiutil.ApiResponse{}
 
 	rsp.Data = g.pam.GetResources()
 	rsp.Message = "ok"
-	sendAPIRespWithOk(w, rsp)
+	apiutil.SendAPIRespWithOk(w, rsp)
 }
 
 func (g *Gateway) getResource(w http.ResponseWriter, r *http.Request) {
-	rsp := apiResponse{}
+	rsp := apiutil.ApiResponse{}
 	idStr := chi.URLParam(r, "id")
 	id, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
@@ -499,63 +529,63 @@ func (g *Gateway) getResource(w http.ResponseWriter, r *http.Request) {
 	if resource.ID == 0 {
 		rsp.Code = 404
 		rsp.Message = "resource not found"
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
 	rsp.Data = resource
-	sendAPIRespWithOk(w, rsp)
+	apiutil.SendAPIRespWithOk(w, rsp)
 }
 
 func (g *Gateway) addResource(w http.ResponseWriter, r *http.Request) {
-	rsp := apiResponse{}
+	rsp := apiutil.ApiResponse{}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 	var pa PortmapResource
 	if err = json.Unmarshal(body, &pa); err != nil {
 		rsp.Code = 400
 		rsp.Message = err.Error()
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 	pa.ID = types.ID(rand.Uint64())
 	if err = g.pam.AddPortmapRes(&pa); err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 	rsp.Data = pa.ID
 	rsp.Message = "ok"
-	sendAPIRespWithOk(w, rsp)
+	apiutil.SendAPIRespWithOk(w, rsp)
 }
 
 func (g *Gateway) updateResource(w http.ResponseWriter, r *http.Request) {
-	rsp := apiResponse{}
+	rsp := apiutil.ApiResponse{}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 	var pa PortmapResource
 	if err = json.Unmarshal(body, &pa); err != nil {
 		rsp.Code = 400
 		rsp.Message = err.Error()
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
 	if pa.ID == 0 {
 		rsp.Code = 400
 		rsp.Message = "resource id is required"
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
@@ -564,7 +594,7 @@ func (g *Gateway) updateResource(w http.ResponseWriter, r *http.Request) {
 	if existing.ID == 0 {
 		rsp.Code = 404
 		rsp.Message = "resource not found"
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
@@ -572,28 +602,28 @@ func (g *Gateway) updateResource(w http.ResponseWriter, r *http.Request) {
 	if err := validatePortmapResource(&pa); err != nil {
 		rsp.Code = 400
 		rsp.Message = err.Error()
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
 	if err = g.pam.UpdatePortmapRes(&pa); err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
 	rsp.Message = "ok"
-	sendAPIRespWithOk(w, rsp)
+	apiutil.SendAPIRespWithOk(w, rsp)
 }
 
 func (g *Gateway) deleteResource(w http.ResponseWriter, r *http.Request) {
-	rsp := apiResponse{}
+	rsp := apiutil.ApiResponse{}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 	var req struct {
@@ -602,14 +632,14 @@ func (g *Gateway) deleteResource(w http.ResponseWriter, r *http.Request) {
 	if err = json.Unmarshal(body, &req); err != nil {
 		rsp.Code = 400
 		rsp.Message = err.Error()
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
 	if req.ID == 0 {
 		rsp.Code = 400
 		rsp.Message = "resource id is required"
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
@@ -618,19 +648,19 @@ func (g *Gateway) deleteResource(w http.ResponseWriter, r *http.Request) {
 	if existing.ID == 0 {
 		rsp.Code = 404
 		rsp.Message = "resource not found"
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
 	if err = g.pam.DelPortmapApp(req.ID); err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
 	rsp.Message = "ok"
-	sendAPIRespWithOk(w, rsp)
+	apiutil.SendAPIRespWithOk(w, rsp)
 }
 
 func validatePortmapResource(res *PortmapResource) error {
@@ -743,20 +773,20 @@ func (g *Gateway) setListenPort(port int) error {
 }
 
 func (g *Gateway) getGatewayInfo(w http.ResponseWriter, r *http.Request) {
-	rsp := apiResponse{}
+	rsp := apiutil.ApiResponse{}
 
 	name, err := g.getGatewayName()
 	if err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 	token, err := g.getToken()
 	if err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 	if token == 0 {
@@ -765,7 +795,7 @@ func (g *Gateway) getGatewayInfo(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			rsp.Code = 500
 			rsp.Message = err.Error()
-			sendAPIRespWithOk(w, rsp)
+			apiutil.SendAPIRespWithOk(w, rsp)
 			return
 		}
 	}
@@ -778,17 +808,17 @@ func (g *Gateway) getGatewayInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rsp.Data = info
-	sendAPIRespWithOk(w, rsp)
+	apiutil.SendAPIRespWithOk(w, rsp)
 }
 
 func (g *Gateway) updateGatewayName(w http.ResponseWriter, r *http.Request) {
-	rsp := apiResponse{}
+	rsp := apiutil.ApiResponse{}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
@@ -798,24 +828,24 @@ func (g *Gateway) updateGatewayName(w http.ResponseWriter, r *http.Request) {
 	if err := json.Unmarshal(body, &req); err != nil {
 		rsp.Code = 400
 		rsp.Message = err.Error()
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
 	if req.Name == "" {
 		rsp.Code = 400
 		rsp.Message = "name is required"
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
 	if err := g.setGatewayName(req.Name); err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
-		sendAPIRespWithOk(w, rsp)
+		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
 	rsp.Message = "ok"
-	sendAPIRespWithOk(w, rsp)
+	apiutil.SendAPIRespWithOk(w, rsp)
 }

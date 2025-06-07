@@ -100,10 +100,27 @@ func (d *daemon) run() {
 		err := d.startWorker()
 		if err != nil {
 			logging.Error("start worker error: %s", err)
+			d.checkAndRevert()
 			return
 		}
 		logging.Info("worker stopped")
 		time.Sleep(time.Second)
+	}
+}
+
+func (d *daemon) checkAndRevert() {
+	binPath, err := os.Executable()
+	if err != nil {
+		return
+	}
+	bak := binPath + ".bak"
+	if fi, err := os.Stat(bak); os.IsExist(err) {
+		if !fi.IsDir() {
+			err = os.Rename(bak, binPath)
+			if err != nil {
+				return
+			}
+		}
 	}
 }
 
