@@ -115,3 +115,17 @@ func (mgr *socks5ProxyManager) saveOutbounds() error {
 	}
 	return mgr.db.Put(keySocksOutbound, buf, nil)
 }
+
+type proxyClient struct {
+	*socks5ProxyManager
+}
+
+func newProxyClient(db *leveldb.DB) (*proxyClient, error) {
+	obMgr, err := NewSocksOutboundsManager(db)
+	if err != nil {
+		return nil, err
+	}
+	return &proxyClient{
+		socks5ProxyManager: obMgr,
+	}, nil
+}

@@ -46,6 +46,7 @@ type Gateway struct {
 	db       *leveldb.DB
 	pam      *PortmapResMgr
 	proxySvc *proxyService
+	proxyCli *proxyClient
 
 	trial bool
 }
@@ -144,6 +145,12 @@ func (g *Gateway) Run(conf Config) error {
 	}
 	g.pam = pam
 
+	pCli, err := newProxyClient(db)
+	if err != nil {
+		return err
+	}
+	g.proxyCli = pCli
+
 	// 初始化代理服务
 	g.proxySvc = &proxyService{
 		db:     db,
@@ -210,7 +217,11 @@ func (g *Gateway) router(ser *apiutil.ApiServer) {
 		// r.Get("/outbound_proxy/get", g.getProxyOBProxy)
 	})
 	ser.AddRoute("/proxy_client", func(r chi.Router) {
-
+		r.Get("/list", g.listOutbounds)
+		r.Get("/get/{id}", g.getOutbound)
+		r.Post("/add", g.addOutbound)
+		r.Post("/update", g.updateOutbound)
+		r.Post("/delete", g.deleteOutbound)
 	})
 	ser.AddRoute("/upgrade", func(r chi.Router) {
 		r.Get("/myself", g.upgradeMyself)
@@ -818,6 +829,172 @@ func (g *Gateway) getGatewayInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rsp.Data = info
+	apiutil.SendAPIRespWithOk(w, rsp)
+}
+
+func (g *Gateway) listOutbounds(w http.ResponseWriter, r *http.Request) {
+	rsp := apiutil.ApiResponse{}
+
+	if g.proxySvc == nil {
+		rsp.Code = 500
+		rsp.Message = "proxy service not initialized"
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	rsp.Data = g.proxyCli.ListOutbounds()
+	rsp.Message = "ok"
+	apiutil.SendAPIRespWithOk(w, rsp)
+}
+
+func (g *Gateway) getOutbound(w http.ResponseWriter, r *http.Request) {
+	rsp := apiutil.ApiResponse{}
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	if g.proxySvc == nil {
+		rsp.Code = 500
+		rsp.Message = "proxy service not initialized"
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	outbound := g.proxyCli.GetOutbound(types.ID(id))
+	if outbound.ID == 0 {
+		rsp.Code = 404
+		rsp.Message = "outbound not found"
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	rsp.Data = outbound
+	apiutil.SendAPIRespWithOk(w, rsp)
+}
+
+func (g *Gateway) addOutbound(w http.ResponseWriter, r *http.Request) {
+	rsp := apiutil.ApiResponse{}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	var ob socksOutbound
+	if err = json.Unmarshal(body, &ob); err != nil {
+		rsp.Code = 400
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	ob.ID = types.ID(rand.Uint64())
+	if err = g.proxyCli.AddOutbound(&ob); err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	rsp.Data = ob.ID
+	rsp.Message = "ok"
+	apiutil.SendAPIRespWithOk(w, rsp)
+}
+
+func (g *Gateway) updateOutbound(w http.ResponseWriter, r *http.Request) {
+	rsp := apiutil.ApiResponse{}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	var ob socksOutbound
+	if err = json.Unmarshal(body, &ob); err != nil {
+		rsp.Code = 400
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	if ob.ID == 0 {
+		rsp.Code = 400
+		rsp.Message = "outbound id is required"
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	// 验证outbound是否存在
+	existing := g.proxyCli.GetOutbound(ob.ID)
+	if existing.ID == 0 {
+		rsp.Code = 404
+		rsp.Message = "outbound not found"
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	if err = g.proxyCli.UpdateOutbound(&ob); err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	rsp.Message = "ok"
+	apiutil.SendAPIRespWithOk(w, rsp)
+}
+
+func (g *Gateway) deleteOutbound(w http.ResponseWriter, r *http.Request) {
+	rsp := apiutil.ApiResponse{}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	var req struct {
+		ID types.ID `json:"id"`
+	}
+	if err = json.Unmarshal(body, &req); err != nil {
+		rsp.Code = 400
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	if req.ID == 0 {
+		rsp.Code = 400
+		rsp.Message = "outbound id is required"
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	// 验证outbound是否存在
+	existing := g.proxyCli.GetOutbound(req.ID)
+	if existing.ID == 0 {
+		rsp.Code = 404
+		rsp.Message = "outbound not found"
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	if err = g.proxyCli.DeleteOutbound(req.ID); err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	rsp.Message = "ok"
 	apiutil.SendAPIRespWithOk(w, rsp)
 }
 
