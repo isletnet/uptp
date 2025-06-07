@@ -211,7 +211,7 @@ func (g *Gateway) router(ser *apiutil.ApiServer) {
 	})
 	ser.AddRoute("/upgrade", func(r chi.Router) {
 		r.Get("/myself", g.upgradeMyself)
-		r.Get("/download/gateway_agent", g.downloadAPK)
+		r.Get("/agent/android", g.downloadAPK)
 	})
 
 	// 静态文件路由

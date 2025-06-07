@@ -294,3 +294,8 @@ function copyGatewayToken() {
 function showError(message) {
     alert(message);
 }
+
+// 下载Android客户端
+function downloadAndroidClient() {
+    window.location.href = '/upgrade/agent/android';
+}
