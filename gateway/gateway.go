@@ -145,7 +145,7 @@ func (g *Gateway) Run(conf Config) error {
 	}
 	g.pam = pam
 
-	pCli, err := newProxyClient(db)
+	pCli, err := newProxyClient(pe.Libp2pHost(), db)
 	if err != nil {
 		return err
 	}
