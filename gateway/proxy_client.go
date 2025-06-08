@@ -1,18 +1,24 @@
 package gateway
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"net"
+	"strconv"
 	"sync"
+	"time"
 
+	"github.com/isletnet/uptp/logging"
 	"github.com/isletnet/uptp/socks5"
+	tunstack "github.com/isletnet/uptp/tun_stack"
 	"github.com/isletnet/uptp/types"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/errors"
+	M "github.com/xjasonlyu/tun2socks/v2/metadata"
 )
 
 type socksOutbound struct {
@@ -27,6 +33,12 @@ type socksOutbound struct {
 	routeNet   *net.IPNet          `json:"-"`
 	socks5Peer socks5.PeerWithAuth `json:"-"`
 }
+
+const (
+	tunName   = "uptptun0"
+	tunLocal  = "10.8.0.3/32"
+	tunRemote = "10.8.0.254/32"
+)
 
 func socks5OutboundFillRunningInfo(ob *socksOutbound) error {
 	pid, err := peer.Decode(ob.Peer)
@@ -59,6 +71,8 @@ type socks5ProxyManager struct {
 	mtx sync.Mutex
 
 	outbounds map[types.ID]*socksOutbound
+
+	tunReady bool
 }
 
 func NewSocksOutboundsManager(db *leveldb.DB) (*socks5ProxyManager, error) {
@@ -185,13 +199,21 @@ func newProxyClient(h host.Host, db *leveldb.DB) (*proxyClient, error) {
 }
 
 func (pc *proxyClient) Start() {
+	err := pc.startTunStack()
+	if err != nil {
+		logging.Error("start tun failed: %s", err)
+		return
+	}
 	obs := pc.ListOutbounds()
 	for _, ob := range obs {
 		if !ob.Open {
 			continue
 		}
 		d := socks5.NewDialer(pc.h, ob.socks5Peer.ID, ob.socks5Peer.UserName, ob.socks5Peer.Password)
-		pc.router.addRoute(ob.routeNet, d)
+		err := pc.addOutboundRoute(&ob, d)
+		if err != nil {
+			logging.Error("add route %s errors", ob.Route)
+		}
 	}
 }
 
@@ -211,7 +233,10 @@ func (pc *proxyClient) AddOutbound(outbound *socksOutbound) error {
 
 	if outbound.Open {
 		d := socks5.NewDialer(pc.h, outbound.socks5Peer.ID, outbound.socks5Peer.UserName, outbound.socks5Peer.Password)
-		pc.router.addRoute(outbound.routeNet, d)
+		err = pc.addOutboundRoute(outbound, d)
+		if err != nil {
+			logging.Error("add route %s errors", outbound.Route)
+		}
 	}
 	return nil
 }
@@ -228,7 +253,10 @@ func (pc *proxyClient) UpdateOutbound(outbound *socksOutbound) error {
 	}
 	if outbound.Open {
 		d := socks5.NewDialer(pc.h, outbound.socks5Peer.ID, outbound.socks5Peer.UserName, outbound.socks5Peer.Password)
-		pc.router.addRoute(outbound.routeNet, d)
+		err = pc.addOutboundRoute(outbound, d)
+		if err != nil {
+			logging.Error("add route %s errors", outbound.Route)
+		}
 	}
 	return nil
 }
@@ -258,6 +286,44 @@ func (pc *proxyClient) CheckPeer(peer string, token types.ID) (string, error) {
 	return rsp.NodeName, nil
 }
 
-func (pc *proxyClient) DeleteOutboundRoute(outbound *socksOutbound) {
+func (pc *proxyClient) addOutboundRoute(outbound *socksOutbound, d *socks5.Dialer) error {
+	pc.router.addRoute(outbound.routeNet, d)
+	return addRoute(outbound.Route, tunRemote)
+}
+
+func (pc *proxyClient) DeleteOutboundRoute(outbound *socksOutbound) error {
 	pc.router.delRoute(outbound.routeNet)
+	return delRoute(outbound.Route, tunRemote)
+}
+
+func (pc *proxyClient) startTunStack() error {
+	k := &tunstack.Key{
+		Device:     tunName,
+		LogLevel:   "debug",
+		UDPTimeout: time.Minute,
+	}
+	tunstack.Insert(k)
+	tunstack.SetProxyDialer(pc)
+	err := tunstack.Start()
+	if err != nil {
+		return err
+	}
+	return setTunAddr(tunName, tunLocal, tunRemote)
+}
+
+func (pc *proxyClient) DialContext(ctx context.Context, metadata *M.Metadata) (net.Conn, error) {
+	if metadata.DstIP.Is6() {
+		return nil, errors.New("not support v6")
+	}
+	dstIP := metadata.DstIP.As4()
+	uip := uint32(dstIP[3]) | uint32(dstIP[2])<<8 | uint32(dstIP[1])<<16 | uint32(dstIP[0])<<24
+	d := pc.router.get(uip)
+	if d == nil {
+		return nil, errors.New("no route found")
+	}
+	return d.DialContext(context.Background(), metadata.Addr().Network(), net.JoinHostPort(metadata.DstIP.String(), strconv.Itoa(int(metadata.DstPort))))
+}
+
+func (pc *proxyClient) DialUDP(metadata *M.Metadata) (net.PacketConn, error) {
+	return nil, errors.New("unsuport")
 }

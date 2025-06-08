@@ -150,6 +150,7 @@ func (g *Gateway) Run(conf Config) error {
 		return err
 	}
 	g.proxyCli = pCli
+	pCli.Start()
 
 	// 初始化代理服务
 	g.proxySvc = &proxyService{
