@@ -108,7 +108,10 @@
                                         </span>
                                     </td>
                                     <td>
-                                        <button class="btn btn-sm btn-outline-primary" onclick="editProxyClient('{{id}}')">
+                                        <button class="btn btn-sm btn-outline-{{open ? 'danger' : 'success'}}" onclick="toggleProxyClientStatus('{{id}}', {{!open}})">
+                                            <i class="bi bi-{{open ? 'pause' : 'play'}}"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-primary ms-1" onclick="editProxyClient('{{id}}')">
                                             <i class="bi bi-pencil"></i>
                                         </button>
                                         <button class="btn btn-sm btn-outline-danger ms-1" onclick="deleteProxyClient('{{id}}')">

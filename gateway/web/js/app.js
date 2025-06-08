@@ -343,7 +343,10 @@ function renderProxyClients(clients) {
                 </span>
             </td>
             <td>
-                <button class="btn btn-sm btn-outline-primary" onclick="editProxyClient('${client.id}')">
+                <button class="btn btn-sm btn-outline-${client.open ? 'danger' : 'success'}" onclick="toggleProxyClientStatus('${client.id}', ${!client.open})">
+                    <i class="bi bi-${client.open ? 'pause' : 'play'}"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-primary ms-1" onclick="editProxyClient('${client.id}')">
                     <i class="bi bi-pencil"></i>
                 </button>
                 <button class="btn btn-sm btn-outline-danger ms-1" onclick="deleteProxyClient('${client.id}')">
@@ -427,6 +430,42 @@ async function saveProxyClient() {
         }
     } catch (error) {
         showError('保存代理出口失败：' + error.message);
+    }
+}
+
+// 切换代理出口状态
+async function toggleProxyClientStatus(id, newStatus) {
+    try {
+        // 先获取当前配置
+        const getResponse = await fetch(`${PROXY_CLIENT_API_BASE_URL}/get/${id}`);
+        const getData = await getResponse.json();
+        
+        if (getData.code !== 0) {
+            showError('获取代理出口信息失败：' + getData.message);
+            return;
+        }
+
+        const client = getData.data;
+        // 更新状态
+        client.open = newStatus;
+
+        // 提交更新
+        const updateResponse = await fetch(`${PROXY_CLIENT_API_BASE_URL}/update`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(client)
+        });
+
+        const updateData = await updateResponse.json();
+        if (updateData.code === 0) {
+            loadProxyClients();
+        } else {
+            showError('切换状态失败：' + updateData.message);
+        }
+    } catch (error) {
+        showError('切换状态失败：' + error.message);
     }
 }
 
