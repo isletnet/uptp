@@ -940,6 +940,10 @@ func (g *Gateway) updateOutbound(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if existing.Open {
+		g.proxyCli.DeleteOutboundRoute(existing)
+	}
+
 	if err = g.proxyCli.UpdateOutbound(&ob); err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()

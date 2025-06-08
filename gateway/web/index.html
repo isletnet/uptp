@@ -89,31 +89,24 @@
                     <table class="table table-hover">
                         <thead>
                             <tr>
-                                <th>ID</th>
+                                <th>备注</th>
+                                <th>目标网段</th>
+                                <th>出口网关</th>
                                 <th>状态</th>
-                                <th>Peer</th>
-                                <th>Token</th>
-                                <th>创建时间</th>
                                 <th>操作</th>
                             </tr>
                         </thead>
                         <tbody id="proxyClientList">
                             <script id="proxyClientRowTemplate" type="text/template">
                                 <tr>
-                                    <td class="d-flex align-items-center gap-1">
-                                        <span>{{id}}</span>
-                                        <button class="btn btn-sm btn-light" onclick="copyToClipboard('{{id}}')" title="复制ID">
-                                            <i class="bi bi-clipboard"></i>
-                                        </button>
-                                    </td>
+                                    <td>{{remark}}</td>
+                                    <td>{{route}}</td>
+                                    <td>{{peer_name}}</td>
                                     <td>
-                                        <span class="badge bg-{{status === 'online' ? 'success' : 'secondary'}}">
-                                            {{status === 'online' ? '在线' : '离线'}}
+                                        <span class="badge bg-{{open ? 'success' : 'secondary'}}">
+                                            {{open ? '启用' : '停用'}}
                                         </span>
                                     </td>
-                                    <td>{{peer}}</td>
-                                    <td class="text-break">{{token}}</td>
-                                    <td>{{created_at}}</td>
                                     <td>
                                         <button class="btn btn-sm btn-outline-primary" onclick="editProxyClient('{{id}}')">
                                             <i class="bi bi-pencil"></i>
@@ -269,12 +262,24 @@
                     <form id="proxyClientForm">
                         <input type="hidden" id="proxyClientId">
                         <div class="mb-3">
+                            <label class="form-label">备注</label>
+                            <input type="text" class="form-control" id="remark" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">目标网段</label>
+                            <input type="text" class="form-control" id="route" placeholder="例如: 192.168.1.0/24" required>
+                        </div>
+                        <div class="mb-3">
                             <label class="form-label">Peer ID</label>
                             <input type="text" class="form-control" id="peerId" required>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Token</label>
                             <input type="text" class="form-control" id="clientToken" required>
+                        </div>
+                        <div class="mb-3 form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="open" checked>
+                            <label class="form-check-label" for="open">启用代理</label>
                         </div>
                     </form>
                 </div>

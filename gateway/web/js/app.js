@@ -334,20 +334,14 @@ function renderProxyClients(clients) {
     clients.forEach(client => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
-            <td class="d-flex align-items-center gap-1">
-                <span>${client.id}</span>
-                <button class="btn btn-sm btn-light" onclick="copyToClipboard('${client.id}')" title="复制ID">
-                    <i class="bi bi-clipboard"></i>
-                </button>
-            </td>
+            <td>${client.remark}</td>
+            <td>${client.route}</td>
+            <td>${client.peer_name}</td>
             <td>
-                <span class="badge bg-${client.status === 'online' ? 'success' : 'secondary'}">
-                    ${client.status === 'online' ? '在线' : '离线'}
+                <span class="badge bg-${client.open ? 'success' : 'secondary'}">
+                    ${client.open ? '启用' : '停用'}
                 </span>
             </td>
-            <td>${client.peer}</td>
-            <td class="text-break">${client.token}</td>
-            <td>${new Date(client.created_at * 1000).toLocaleString()}</td>
             <td>
                 <button class="btn btn-sm btn-outline-primary" onclick="editProxyClient('${client.id}')">
                     <i class="bi bi-pencil"></i>
@@ -381,6 +375,9 @@ async function editProxyClient(id) {
             document.getElementById('proxyClientId').value = client.id;
             document.getElementById('peerId').value = client.peer;
             document.getElementById('clientToken').value = client.token;
+            document.getElementById('remark').value = client.remark || '';
+            document.getElementById('route').value = client.route || '0.0.0.0/0';
+            document.getElementById('open').checked = client.open !== false;
             proxyClientModal.show();
         } else {
             showError('获取代理出口信息失败：' + data.message);
@@ -401,7 +398,10 @@ async function saveProxyClient() {
     const clientId = document.getElementById('proxyClientId').value;
     const client = {
         peer: document.getElementById('peerId').value,
-        token: document.getElementById('clientToken').value
+        token: document.getElementById('clientToken').value,
+        remark: document.getElementById('remark').value || '',
+        open: document.getElementById('open').checked,
+        route: document.getElementById('route').value || '0.0.0.0/0'
     };
 
     try {
@@ -437,8 +437,12 @@ async function deleteProxyClient(id) {
     }
 
     try {
-        const response = await fetch(`${PROXY_CLIENT_API_BASE_URL}/delete/${id}`, {
-            method: 'POST'
+        const response = await fetch(`${PROXY_CLIENT_API_BASE_URL}/delete`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ id: id })
         });
         const data = await response.json();
         

@@ -17,6 +17,7 @@ import (
 
 type socksOutbound struct {
 	ID       types.ID `json:"id"`
+	Remark   string   `json:"remark"`
 	Open     bool     `json:"open"`
 	Peer     string   `json:"peer"`
 	PeerName string   `json:"peer_name"`
@@ -86,6 +87,10 @@ func (mgr *socks5ProxyManager) AddOutbound(outbound *socksOutbound) error {
 }
 
 func (mgr *socks5ProxyManager) UpdateOutbound(outbound *socksOutbound) error {
+	err := socks5OutboundFillRunningInfo(outbound)
+	if err != nil {
+		return err
+	}
 	mgr.mtx.Lock()
 	defer mgr.mtx.Unlock()
 	if mgr.outbounds == nil {
@@ -109,13 +114,13 @@ func (mgr *socks5ProxyManager) DeleteOutbound(id types.ID) (*socksOutbound, erro
 	return ob, mgr.saveOutbounds()
 }
 
-func (mgr *socks5ProxyManager) GetOutbound(id types.ID) socksOutbound {
+func (mgr *socks5ProxyManager) GetOutbound(id types.ID) *socksOutbound {
 	mgr.mtx.Lock()
 	defer mgr.mtx.Unlock()
 	if mgr.outbounds == nil {
 		mgr.outbounds = make(map[types.ID]*socksOutbound)
 	}
-	return *mgr.outbounds[id]
+	return mgr.outbounds[id]
 }
 
 func (mgr *socks5ProxyManager) ListOutbounds() []socksOutbound {
@@ -203,8 +208,28 @@ func (pc *proxyClient) AddOutbound(outbound *socksOutbound) error {
 	if !outbound.Open {
 		return nil
 	}
-	d := socks5.NewDialer(pc.h, outbound.socks5Peer.ID, outbound.socks5Peer.UserName, outbound.socks5Peer.Password)
-	pc.router.addRoute(outbound.routeNet, d)
+
+	if outbound.Open {
+		d := socks5.NewDialer(pc.h, outbound.socks5Peer.ID, outbound.socks5Peer.UserName, outbound.socks5Peer.Password)
+		pc.router.addRoute(outbound.routeNet, d)
+	}
+	return nil
+}
+
+func (pc *proxyClient) UpdateOutbound(outbound *socksOutbound) error {
+	peerName, err := pc.CheckPeer(outbound.Peer, outbound.Token)
+	if err != nil {
+		return err
+	}
+	outbound.PeerName = peerName
+	err = pc.socks5ProxyManager.UpdateOutbound(outbound)
+	if err != nil {
+		return err
+	}
+	if outbound.Open {
+		d := socks5.NewDialer(pc.h, outbound.socks5Peer.ID, outbound.socks5Peer.UserName, outbound.socks5Peer.Password)
+		pc.router.addRoute(outbound.routeNet, d)
+	}
 	return nil
 }
 
@@ -231,4 +256,8 @@ func (pc *proxyClient) CheckPeer(peer string, token types.ID) (string, error) {
 		return "", errors.New(rsp.Err)
 	}
 	return rsp.NodeName, nil
+}
+
+func (pc *proxyClient) DeleteOutboundRoute(outbound *socksOutbound) {
+	pc.router.delRoute(outbound.routeNet)
 }
