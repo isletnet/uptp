@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/isletnet/uptp/logging"
 	"github.com/isletnet/uptp/types"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -16,16 +15,38 @@ const (
 	ResourceAuthorizeID = "/resource/authorize/1.0.0"
 )
 
+const (
+	AuthorizeTypePortmap = 1
+	AuthorizeTypeProxy   = 2
+)
+
 type AuthorizeReq struct {
+	Type    int                   `json:"type"`
+	Portmap *AuthorizePortmapInfo `json:"portmap,omitempty"`
+	Proxy   *AuthorizeProxyInfo   `json:"proxy,omitempty"`
+}
+
+type AuthorizePortmapInfo struct {
 	ResourceID types.ID `json:"resource_id"`
-	// Token      string
+}
+
+type AuthorizeProxyInfo struct {
+	Token types.ID `json:"token"`
 }
 
 type AuthorizeResp struct {
-	NodeName string `json:"node_name"`
-	IsTrial  bool   `json:"is_trial"`
-	Err      string `json:"err"`
-	// Token      string
+	NodeName string                `json:"node_name"`
+	Err      string                `json:"err"`
+	Portmap  *AuthorizePortmapResp `json:"portmap,omitempty"`
+	Proxy    *AuthorizeProxyResp   `json:"proxy,omitempty"`
+}
+type AuthorizePortmapResp struct {
+	IsTrial bool `json:"is_trial"`
+}
+
+type AuthorizeProxyResp struct {
+	Route string `json:"route"`
+	Dns   string `json:"dns"`
 }
 
 func (g *Gateway) authorize() {
@@ -45,32 +66,61 @@ func (g *Gateway) authorizeHandler(s network.Stream) {
 	if err != nil {
 		return
 	}
+	switch req.Type {
+	case AuthorizeTypePortmap:
+		g.handlePortmapAuth(s, req.Portmap)
+	case AuthorizeTypeProxy:
+		g.handleProxyAuth(s, req.Proxy)
+	default:
+		return
+	}
+}
+
+func (g *Gateway) handlePortmapAuth(s network.Stream, info *AuthorizePortmapInfo) {
 	var authRes bool
 
-	if req.ResourceID == types.ID(666666) && g.trial {
+	if info.ResourceID == types.ID(666666) && g.trial {
 		authRes = true
-	} else if res := g.pam.GetAppByID(req.ResourceID); res.ID == req.ResourceID {
+	} else if res := g.prm.GetAppByID(info.ResourceID); res.ID == info.ResourceID {
 		authRes = true
-	} else {
-		token, err := g.getToken()
-		if err != nil {
-			logging.Error("authorize handler get token error: %s", err)
-		}
-		if token == uint64(req.ResourceID) {
-			authRes = true
-		}
 	}
-	resp := AuthorizeResp{}
+	resp := AuthorizeResp{
+		Portmap: &AuthorizePortmapResp{},
+	}
 	if authRes {
 		gwName, err := g.getGatewayName()
 		if err != nil {
 			resp.Err = err.Error()
 		}
 		resp.NodeName = gwName
-		resp.IsTrial = req.ResourceID == types.ID(666666)
+		resp.Portmap.IsTrial = info.ResourceID == types.ID(666666)
 	} else {
 		resp.Err = "authorize failed"
 	}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return
+	}
+	s.Write(data)
+}
+
+func (g *Gateway) handleProxyAuth(s network.Stream, info *AuthorizeProxyInfo) {
+	token, err := g.getToken()
+	if err != nil {
+		return
+	}
+	if token != uint64(info.Token) {
+		return
+	}
+
+	resp := AuthorizeResp{
+		Proxy: &AuthorizeProxyResp{},
+	}
+	gwName, err := g.getGatewayName()
+	if err != nil {
+		resp.Err = err.Error()
+	}
+	resp.NodeName = gwName
 	data, err := json.Marshal(resp)
 	if err != nil {
 		return

@@ -8,11 +8,14 @@ let resourceModal;
 document.addEventListener('DOMContentLoaded', function() {
     resourceModal = new bootstrap.Modal(document.getElementById('resourceModal'));
     gatewayNameModal = new bootstrap.Modal(document.getElementById('gatewayNameModal'));
+    portmapModal = new bootstrap.Modal(document.getElementById('portmapModal'));
     loadResources();
     loadGatewayInfo();
+    loadPortmapApps();
+    loadProxyConfig();
 });
 
-// 加载资源列表
+// 加载端口映射资源列表
 async function loadResources() {
     try {
         const response = await fetch(`${API_BASE_URL}/list`);
@@ -23,14 +26,14 @@ async function loadResources() {
             const resources = Array.isArray(data.data) ? data.data : [];
             renderResourceList(resources);
         } else {
-            showError('加载资源列表失败：' + data.message);
+            showError('加载端口映射资源列表失败：' + data.message);
         }
     } catch (error) {
-        showError('加载资源列表失败：' + error.message);
+        showError('加载端口映射资源列表失败：' + error.message);
     }
 }
 
-// 渲染资源列表
+// 渲染端口映射资源列表
 function renderResourceList(resources) {
     const tbody = document.getElementById('resourceList');
     tbody.innerHTML = '';
@@ -278,6 +281,166 @@ function copyToClipboard(text) {
     }
 }
 
+// 加载端口映射应用列表
+async function loadPortmapApps() {
+    try {
+        const response = await fetch('/app/list');
+        const data = await response.json();
+        
+        if (data.code === 0) {
+            const portmaps = Array.isArray(data.data) ? data.data : [];
+            renderPortmapList(portmaps);
+        } else {
+            showError('加载端口映射列表失败：' + data.message);
+        }
+    } catch (error) {
+        showError('加载端口映射列表失败：' + error.message);
+    }
+}
+
+// 渲染端口映射列表
+function renderPortmapList(portmaps) {
+    const tbody = document.getElementById('portmapList');
+    tbody.innerHTML = '';
+
+    if (!portmaps || portmaps.length === 0) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td colspan="7" class="text-center">暂无数据</td>';
+        tbody.appendChild(tr);
+        return;
+    }
+
+    portmaps.forEach(portmap => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${portmap.name}</td>
+            <td>${portmap.peer_name}</td>
+            <td>${portmap.network}</td>
+            <td>${portmap.local_ip}</td>
+            <td>${portmap.local_port}</td>
+            <td>
+                <span class="badge ${portmap.running ? 'bg-success' : 'bg-secondary'}">
+                    ${portmap.running ? '运行中' : '已停止'}
+                </span>
+            </td>
+            <td>
+                <button class="btn btn-sm btn-outline-primary" onclick="editPortmap('${portmap.id}')">
+                    <i class="bi bi-pencil"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger ms-1" onclick="deletePortmap('${portmap.id}')">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+// 显示添加端口映射模态框
+function showAddPortmapModal() {
+    document.getElementById('portmapModalTitle').textContent = '添加端口映射';
+    document.getElementById('portmapForm').reset();
+    document.getElementById('portmapId').value = '';
+    portmapModal.show();
+}
+
+// 显示编辑端口映射模态框
+async function editPortmap(id) {
+    try {
+        const response = await fetch(`/app/get/${id}`);
+        const data = await response.json();
+        
+        if (data.code === 0) {
+            const portmap = data.data;
+            document.getElementById('portmapModalTitle').textContent = '编辑端口映射';
+            document.getElementById('portmapId').value = portmap.id;
+            document.getElementById('portmapName').value = portmap.name;
+            document.getElementById('peerId').value = portmap.peer_id;
+            document.getElementById('resId').value = portmap.res_id;
+            document.getElementById('portmapNetwork').value = portmap.network;
+            document.getElementById('localIp').value = portmap.local_ip;
+            document.getElementById('localPort').value = portmap.local_port;
+            document.getElementById('running').checked = portmap.running;
+            portmapModal.show();
+        } else {
+            showError('获取端口映射信息失败：' + data.message);
+        }
+    } catch (error) {
+        showError('获取端口映射信息失败：' + error.message);
+    }
+}
+
+// 保存端口映射
+async function savePortmap() {
+    const form = document.getElementById('portmapForm');
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+
+    const portmapId = document.getElementById('portmapId').value;
+    const portmap = {
+        name: document.getElementById('portmapName').value,
+        peer_id: document.getElementById('peerId').value,
+        res_id: document.getElementById('resId').value,
+        network: document.getElementById('portmapNetwork').value,
+        local_ip: document.getElementById('localIp').value,
+        local_port: parseInt(document.getElementById('localPort').value),
+        running: document.getElementById('running').checked
+    };
+
+    try {
+        const url = portmapId ? '/app/update' : '/app/add';
+        if (portmapId) {
+            portmap.id = portmapId;
+        }
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(portmap)
+        });
+
+        const data = await response.json();
+        if (data.code === 0) {
+            portmapModal.hide();
+            loadPortmapApps();
+        } else {
+            showError('保存端口映射失败：' + data.message);
+        }
+    } catch (error) {
+        showError('保存端口映射失败：' + error.message);
+    }
+}
+
+// 删除端口映射
+async function deletePortmap(id) {
+    if (!confirm('确定要删除这个端口映射吗？')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/app/delete', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ id: id })
+        });
+
+        const data = await response.json();
+        if (data.code === 0) {
+            loadPortmapApps();
+        } else {
+            showError('删除端口映射失败：' + data.message);
+        }
+    } catch (error) {
+        showError('删除端口映射失败：' + error.message);
+    }
+}
+
 // 复制网关ID到剪贴板
 function copyGatewayId() {
     const gatewayId = document.getElementById('gatewayId').textContent.trim();
@@ -298,4 +461,56 @@ function showError(message) {
 // 下载Android客户端
 function downloadAndroidClient() {
     window.location.href = '/upgrade/agent/android';
+}
+
+// 加载代理配置
+async function loadProxyConfig() {
+    try {
+        const response = await fetch('/proxy/config');
+        const data = await response.json();
+        
+        if (data.code === 0) {
+            const config = data.data;
+            document.getElementById('proxyRoute').value = config.route || '';
+            document.getElementById('proxyDns').value = config.dns || '';
+            document.getElementById('proxyAddr').value = config.proxy_addr || '';
+            document.getElementById('proxyUser').value = config.proxy_user || '';
+            document.getElementById('proxyPass').value = config.proxy_pass || '';
+        } else {
+            showError('加载代理配置失败：' + data.message);
+        }
+    } catch (error) {
+        showError('加载代理配置失败：' + error.message);
+    }
+}
+
+// 保存代理配置
+async function saveProxyConfig() {
+    const config = {
+        route: document.getElementById('proxyRoute').value,
+        dns: document.getElementById('proxyDns').value,
+        proxy_addr: document.getElementById('proxyAddr').value,
+        proxy_user: document.getElementById('proxyUser').value,
+        proxy_pass: document.getElementById('proxyPass').value
+    };
+
+    try {
+        const response = await fetch('/proxy/config', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(config)
+        });
+
+        const data = await response.json();
+        if (data.code === 0) {
+            const toast = new bootstrap.Toast(document.getElementById('copyToast'));
+            toast.show();
+        } else {
+            showError('保存代理配置失败：' + data.message);
+        }
+    } catch (error) {
+        showError('保存代理配置失败：' + error.message);
+    }
 }

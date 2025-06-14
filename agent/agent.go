@@ -25,7 +25,7 @@ type agent struct {
 	p2p *p2pengine.P2PEngine
 	pm  *portmap.Portmap
 	db  *leveldb.DB
-	am  *appMgr
+	am  *gateway.PortmapAppMgr
 
 	*proxyMgr
 
@@ -113,7 +113,7 @@ func (ag *agent) startPortmap(workDir string) error {
 	}
 	ag.pm = portmap.NewPortMap(ag.p2p.Libp2pHost())
 	ag.pm.SetGetHandshakeFunc(func(network, ip string, port int) (peerID string, handshake []byte) {
-		app := ag.am.findAppWithPort(network, port)
+		app := ag.am.FindAppWithPort(network, port)
 		if app.ResID == 0 {
 			return
 		}
@@ -139,7 +139,7 @@ func (ag *agent) startPortmap(workDir string) error {
 		if err != nil {
 			a.Err = ""
 			a.Running = false
-			ag.am.updateApp(&a)
+			ag.am.UpdatePortmapApp(&a)
 			logging.Error("add portmap listener error: %s", err)
 		}
 	}
@@ -159,19 +159,21 @@ func (ag *agent) close() {
 		ag.db = nil
 	}
 }
-func (ag *agent) initAppMgr(workDir string) ([]App, error) {
-	ag.am = newAppMgr(ag.db)
-	apps, err := ag.am.loadApps()
+func (ag *agent) initAppMgr(workDir string) ([]gateway.PortmapApp, error) {
+	ag.am = gateway.NewPortmapAppMgr(ag.db)
+	apps, err := ag.am.LoadPortmapApps()
 	if err != nil {
 		return nil, err
 	}
 	return apps, nil
 }
 
-func (ag *agent) addApp(a *App) error {
-	a.ID = rand.Uint64()
+func (ag *agent) addApp(a *gateway.PortmapApp) error {
+	a.ID = types.ID(rand.Uint64())
 	rsp, err := gateway.ResourceAuthorize(ag.p2p.Libp2pHost(), a.PeerID, gateway.AuthorizeReq{
-		ResourceID: types.ID(a.ResID),
+		Portmap: &gateway.AuthorizePortmapInfo{
+			ResourceID: types.ID(a.ResID),
+		},
 	})
 	if err != nil {
 		return err
@@ -179,7 +181,10 @@ func (ag *agent) addApp(a *App) error {
 	if rsp.Err != "" {
 		return errors.New(rsp.Err)
 	}
-	if !rsp.IsTrial {
+	if rsp.Portmap == nil {
+		return errors.New("portmap resource auth failed")
+	}
+	if !rsp.Portmap.IsTrial {
 		a.TargetAddr = ""
 		a.TargetPort = 0
 	}
@@ -191,14 +196,14 @@ func (ag *agent) addApp(a *App) error {
 			a.Err = err.Error()
 		}
 	}
-	return ag.am.updateApp(a)
+	return ag.am.UpdatePortmapApp(a)
 }
 
-func (ag *agent) updateAPP(a *App) error {
+func (ag *agent) updateAPP(a *gateway.PortmapApp) error {
 	if a.ID == 0 {
 		return errors.New("app id is empty")
 	}
-	exist := ag.am.getApp(a.ID)
+	exist := ag.am.GetPortmapApp(a.ID.Uint64())
 	if exist == nil {
 		return errors.New("app not exists")
 	}
@@ -224,20 +229,20 @@ func (ag *agent) updateAPP(a *App) error {
 	} else {
 		ag.pm.DeleteListener(a.Network, a.LocalIP, a.LocalPort)
 	}
-	return ag.am.updateApp(exist)
+	return ag.am.UpdatePortmapApp(exist)
 }
 
-func (ag *agent) delApp(a *App) error {
+func (ag *agent) delApp(a *gateway.PortmapApp) error {
 	if !ag.running {
 		return errors.New("agent not running")
 	}
 	ag.pm.DeleteListener(a.Network, a.LocalIP, a.LocalPort)
-	return ag.am.delApp(a.ID)
+	return ag.am.DelPortmapApp(a.ID.Uint64())
 }
 
-func (ag *agent) getApps() []App {
+func (ag *agent) getApps() []gateway.PortmapApp {
 	if !ag.running {
 		return nil
 	}
-	return ag.am.getApps()
+	return ag.am.GetPortmapApps()
 }

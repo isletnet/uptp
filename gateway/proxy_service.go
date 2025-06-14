@@ -12,6 +12,7 @@ var (
 )
 
 type proxyServiceConfig struct {
+	Route     string `json:"route"`
 	DNS       string `json:"dns"`
 	ProxyAddr string `json:"proxy_addr"`
 	ProxyUser string `json:"proxy_user"`
@@ -55,6 +56,13 @@ func (ps *proxyService) getConfig() proxyServiceConfig {
 	ps.mtx.Lock()
 	defer ps.mtx.Unlock()
 	return ps.config
+}
+
+func (ps *proxyService) set(config proxyServiceConfig) error {
+	ps.mtx.Lock()
+	defer ps.mtx.Unlock()
+	ps.config = config
+	return ps.saveConfig()
 }
 
 func (ps *proxyService) setDNS(dns string) error {

@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/isletnet/uptp/agent"
+	"github.com/isletnet/uptp/gateway"
 	"github.com/isletnet/uptp/logger"
 	"github.com/isletnet/uptp/logging"
 )
@@ -33,7 +34,7 @@ func main() {
 				logging.Error("Usage: uptp-agent add <name> <peer_id> <network> <local_ip> <local_port> <target_addr> <target_port>")
 				return
 			}
-			app := &agent.App{
+			app := &gateway.PortmapApp{
 				Name:       os.Args[2],
 				PeerID:     os.Args[3],
 				Network:    os.Args[4],
@@ -53,7 +54,7 @@ func main() {
 				logging.Error("Usage: uptp-agent del <name>")
 				return
 			}
-			if err := agent.DelApp(&agent.App{Name: os.Args[2]}); err != nil {
+			if err := agent.DelApp(&gateway.PortmapApp{Name: os.Args[2]}); err != nil {
 				logging.Error("del app error: %v", err)
 			}
 			return
@@ -61,7 +62,7 @@ func main() {
 	}
 
 	// Normal agent start mode
-	if err := agent.Start(baseDir); err != nil {
+	if err := agent.Start(baseDir, true); err != nil {
 		logging.Error("agent run error: %s", err)
 		return
 	}

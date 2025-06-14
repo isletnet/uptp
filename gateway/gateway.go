@@ -44,7 +44,8 @@ type Gateway struct {
 	pe       *p2pengine.P2PEngine
 	pm       *portmap.Portmap
 	db       *leveldb.DB
-	pam      *PortmapResMgr
+	prm      *PortmapResMgr
+	pam      *PortmapAppMgr
 	proxySvc *proxyService
 
 	trial bool
@@ -138,7 +139,14 @@ func (g *Gateway) Run(conf Config) error {
 	}
 	g.pe = pe
 
-	pam, err := NewPortmapResMgr(db)
+	prm, err := NewPortmapResMgr(db)
+	if err != nil {
+		return err
+	}
+	g.prm = prm
+
+	pam := NewPortmapAppMgr(db)
+	pmApps, err := pam.LoadPortmapApps()
 	if err != nil {
 		return err
 	}
@@ -155,6 +163,24 @@ func (g *Gateway) Run(conf Config) error {
 
 	g.pm = portmap.NewPortMap(pe.Libp2pHost())
 	g.pm.SetHandleHandshakeFunc(g.handlePortmapHandshake)
+	g.pm.SetGetHandshakeFunc(func(network, ip string, port int) (peerID string, handshake []byte) {
+		app := g.pam.FindAppWithPort(network, port)
+		if app.ResID == 0 {
+			return
+		}
+		peerID = app.PeerID
+		hs := PortmapAppHandshake{
+			ResID:      types.ID(app.ResID),
+			Network:    app.Network,
+			TargetAddr: app.TargetAddr,
+			TargetPort: app.TargetPort,
+		}
+		handshake, err = json.Marshal(hs)
+		if err != nil {
+			return
+		}
+		return
+	})
 	g.pm.Start(true)
 
 	if g.trial {
@@ -166,6 +192,18 @@ func (g *Gateway) Run(conf Config) error {
 		socks5.StartServe(g.pe.Libp2pHost(), g.proxyAuth)
 	}
 
+	for _, a := range pmApps {
+		if !a.Running {
+			continue
+		}
+		_, err = g.pm.AddListener(a.Network, a.LocalIP, a.LocalPort)
+		if err != nil {
+			a.Err = ""
+			a.Running = false
+			g.pam.UpdatePortmapApp(&a)
+			logging.Error("add portmap listener error: %s", err)
+		}
+	}
 	apiSer := &apiutil.ApiServer{}
 	g.router(apiSer)
 	g.authorize()
@@ -204,14 +242,23 @@ func (g *Gateway) router(ser *apiutil.ApiServer) {
 		// r.Get("/token/list", g.getProxyTokens)
 		// r.Post("/token/add", g.addProxyToken)
 		// r.Post("/token/delete", g.deleteProxyToken)
-		r.Post("/dns/set", g.setProxyDNS)
+		r.Post("/config", g.updateProxyConfig)
+		// r.Post("/dns/set", g.setProxyDNS)
 		// r.Get("/dns/get", g.getProxyDNS)
-		r.Post("/outbound_proxy/set", g.setProxyOBProxy)
+		// r.Post("/outbound_proxy/set", g.setProxyOBProxy)
 		// r.Get("/outbound_proxy/get", g.getProxyOBProxy)
 	})
 	ser.AddRoute("/upgrade", func(r chi.Router) {
 		r.Get("/myself", g.upgradeMyself)
 		r.Get("/agent/android", g.downloadAPK)
+	})
+
+	ser.AddRoute("/app", func(r chi.Router) {
+		r.Post("/add", g.addApp)
+		r.Post("/update", g.updateApp)
+		r.Post("/delete", g.deleteApp)
+		r.Get("/list", g.listApps)
+		r.Get("/get/{id}", g.getApp)
 	})
 
 	// 静态文件路由
@@ -363,7 +410,7 @@ func (g *Gateway) getProxyConfig(w http.ResponseWriter, r *http.Request) {
 // 	sendAPIRespWithOk(w, rsp)
 // }
 
-func (g *Gateway) setProxyDNS(w http.ResponseWriter, r *http.Request) {
+func (g *Gateway) updateProxyConfig(w http.ResponseWriter, r *http.Request) {
 	rsp := apiutil.ApiResponse{}
 	if g.proxySvc == nil {
 		rsp.Code = 500
@@ -380,9 +427,7 @@ func (g *Gateway) setProxyDNS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		DNS string `json:"dns"`
-	}
+	req := proxyServiceConfig{}
 	if err := json.Unmarshal(body, &req); err != nil {
 		rsp.Code = 400
 		rsp.Message = err.Error()
@@ -390,14 +435,7 @@ func (g *Gateway) setProxyDNS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.DNS == "" {
-		rsp.Code = 400
-		rsp.Message = "dns is required"
-		apiutil.SendAPIRespWithOk(w, rsp)
-		return
-	}
-
-	if err := g.proxySvc.setDNS(req.DNS); err != nil {
+	if err := g.proxySvc.set(req); err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
 		apiutil.SendAPIRespWithOk(w, rsp)
@@ -407,6 +445,51 @@ func (g *Gateway) setProxyDNS(w http.ResponseWriter, r *http.Request) {
 	rsp.Message = "ok"
 	apiutil.SendAPIRespWithOk(w, rsp)
 }
+
+// func (g *Gateway) setProxyDNS(w http.ResponseWriter, r *http.Request) {
+// 	rsp := apiutil.ApiResponse{}
+// 	if g.proxySvc == nil {
+// 		rsp.Code = 500
+// 		rsp.Message = "proxy service not initialized"
+// 		apiutil.SendAPIRespWithOk(w, rsp)
+// 		return
+// 	}
+
+// 	body, err := io.ReadAll(r.Body)
+// 	if err != nil {
+// 		rsp.Code = 500
+// 		rsp.Message = err.Error()
+// 		apiutil.SendAPIRespWithOk(w, rsp)
+// 		return
+// 	}
+
+// 	var req struct {
+// 		DNS string `json:"dns"`
+// 	}
+// 	if err := json.Unmarshal(body, &req); err != nil {
+// 		rsp.Code = 400
+// 		rsp.Message = err.Error()
+// 		apiutil.SendAPIRespWithOk(w, rsp)
+// 		return
+// 	}
+
+// 	if req.DNS == "" {
+// 		rsp.Code = 400
+// 		rsp.Message = "dns is required"
+// 		apiutil.SendAPIRespWithOk(w, rsp)
+// 		return
+// 	}
+
+// 	if err := g.proxySvc.setDNS(req.DNS); err != nil {
+// 		rsp.Code = 500
+// 		rsp.Message = err.Error()
+// 		apiutil.SendAPIRespWithOk(w, rsp)
+// 		return
+// 	}
+
+// 	rsp.Message = "ok"
+// 	apiutil.SendAPIRespWithOk(w, rsp)
+// }
 
 // func (g *Gateway) getProxyDNS(w http.ResponseWriter, r *http.Request) {
 // 	rsp := apiResponse{}
@@ -421,15 +504,193 @@ func (g *Gateway) setProxyDNS(w http.ResponseWriter, r *http.Request) {
 // 	sendAPIRespWithOk(w, rsp)
 // }
 
-func (g *Gateway) setProxyOBProxy(w http.ResponseWriter, r *http.Request) {
+// func (g *Gateway) setProxyOBProxy(w http.ResponseWriter, r *http.Request) {
+// 	rsp := apiutil.ApiResponse{}
+// 	if g.proxySvc == nil {
+// 		rsp.Code = 500
+// 		rsp.Message = "proxy service not initialized"
+// 		apiutil.SendAPIRespWithOk(w, rsp)
+// 		return
+// 	}
+
+// 	body, err := io.ReadAll(r.Body)
+// 	if err != nil {
+// 		rsp.Code = 500
+// 		rsp.Message = err.Error()
+// 		apiutil.SendAPIRespWithOk(w, rsp)
+// 		return
+// 	}
+
+// 	var req struct {
+// 		Addr string `json:"addr"`
+// 		User string `json:"user"`
+// 		Pass string `json:"pass"`
+// 	}
+// 	if err := json.Unmarshal(body, &req); err != nil {
+// 		rsp.Code = 400
+// 		rsp.Message = err.Error()
+// 		apiutil.SendAPIRespWithOk(w, rsp)
+// 		return
+// 	}
+
+// 	if req.Addr == "" {
+// 		rsp.Code = 400
+// 		rsp.Message = "proxy address is required"
+// 		apiutil.SendAPIRespWithOk(w, rsp)
+// 		return
+// 	}
+
+// 	if err := g.proxySvc.setProxy(req.Addr, req.User, req.Pass); err != nil {
+// 		rsp.Code = 500
+// 		rsp.Message = err.Error()
+// 		apiutil.SendAPIRespWithOk(w, rsp)
+// 		return
+// 	}
+// 	socks5.SetOutboundProxy(req.Addr, req.User, req.Pass)
+
+// 	rsp.Message = "ok"
+// 	apiutil.SendAPIRespWithOk(w, rsp)
+// }
+
+func (g *Gateway) addApp(w http.ResponseWriter, r *http.Request) {
 	rsp := apiutil.ApiResponse{}
-	if g.proxySvc == nil {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
 		rsp.Code = 500
-		rsp.Message = "proxy service not initialized"
+		rsp.Message = err.Error()
 		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
 
+	var app PortmapApp
+	if err := json.Unmarshal(body, &app); err != nil {
+		rsp.Code = 400
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+	authRsp, err := ResourceAuthorize(g.pe.Libp2pHost(), app.PeerID, AuthorizeReq{
+		Portmap: &AuthorizePortmapInfo{
+			ResourceID: types.ID(app.ResID),
+		},
+	})
+	if err != nil {
+		rsp.Code = 400
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+	if authRsp.Err != "" {
+		rsp.Code = 400
+		rsp.Message = authRsp.Err
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+	app.PeerName = authRsp.NodeName
+
+	// 生成随机ID
+	app.ID = types.ID(rand.Uint64())
+
+	// 如果应用设置为运行状态，则添加listener
+	if app.Running {
+		_, err := g.pm.AddListener(app.Network, app.LocalIP, app.LocalPort)
+		if err != nil {
+			app.Running = false
+			app.Err = err.Error()
+		}
+	}
+
+	if err := g.pam.UpdatePortmapApp(&app); err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	rsp.Message = "ok"
+	apiutil.SendAPIRespWithOk(w, rsp)
+}
+
+func (g *Gateway) updateApp(w http.ResponseWriter, r *http.Request) {
+	rsp := apiutil.ApiResponse{}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	var app PortmapApp
+	if err := json.Unmarshal(body, &app); err != nil {
+		rsp.Code = 400
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	if app.ID == 0 {
+		rsp.Code = 400
+		rsp.Message = "app id is empty"
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	// 获取当前应用状态
+	oldApp := g.pam.GetPortmapApp(app.ID.Uint64())
+	if oldApp == nil {
+		rsp.Code = 404
+		rsp.Message = "app not found"
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+	if app.PeerID != oldApp.PeerID || app.ResID != oldApp.ResID {
+		authRsp, err := ResourceAuthorize(g.pe.Libp2pHost(), app.PeerID, AuthorizeReq{
+			Portmap: &AuthorizePortmapInfo{
+				ResourceID: types.ID(app.ResID),
+			},
+		})
+		if err != nil {
+			rsp.Code = 400
+			rsp.Message = err.Error()
+			apiutil.SendAPIRespWithOk(w, rsp)
+			return
+		}
+		if authRsp.Err != "" {
+			rsp.Code = 400
+			rsp.Message = authRsp.Err
+			apiutil.SendAPIRespWithOk(w, rsp)
+			return
+		}
+		app.PeerName = authRsp.NodeName
+	}
+
+	// 如果运行状态有变化，则更新listener
+	if oldApp.Running {
+		g.pm.DeleteListener(oldApp.Network, oldApp.LocalIP, oldApp.LocalPort)
+
+	}
+	if app.Running {
+		_, err := g.pm.AddListener(app.Network, app.LocalIP, app.LocalPort)
+		if err != nil {
+			app.Running = false
+			app.Err = err.Error()
+		}
+	}
+
+	if err := g.pam.UpdatePortmapApp(&app); err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	rsp.Message = "ok"
+	apiutil.SendAPIRespWithOk(w, rsp)
+}
+
+func (g *Gateway) deleteApp(w http.ResponseWriter, r *http.Request) {
+	rsp := apiutil.ApiResponse{}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		rsp.Code = 500
@@ -439,9 +700,7 @@ func (g *Gateway) setProxyOBProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Addr string `json:"addr"`
-		User string `json:"user"`
-		Pass string `json:"pass"`
+		ID uint64 `json:"id"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
 		rsp.Code = 400
@@ -450,22 +709,49 @@ func (g *Gateway) setProxyOBProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Addr == "" {
-		rsp.Code = 400
-		rsp.Message = "proxy address is required"
-		apiutil.SendAPIRespWithOk(w, rsp)
-		return
+	// 获取应用信息
+	app := g.pam.GetPortmapApp(req.ID)
+	if app != nil && app.Running {
+		// 如果应用正在运行，则移除listener
+		g.pm.DeleteListener(app.Network, app.LocalIP, app.LocalPort)
 	}
 
-	if err := g.proxySvc.setProxy(req.Addr, req.User, req.Pass); err != nil {
+	if err := g.pam.DelPortmapApp(req.ID); err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
 		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
-	socks5.SetOutboundProxy(req.Addr, req.User, req.Pass)
 
 	rsp.Message = "ok"
+	apiutil.SendAPIRespWithOk(w, rsp)
+}
+
+func (g *Gateway) listApps(w http.ResponseWriter, r *http.Request) {
+	rsp := apiutil.ApiResponse{}
+	apps := g.pam.GetPortmapApps()
+	rsp.Data = apps
+	apiutil.SendAPIRespWithOk(w, rsp)
+}
+
+func (g *Gateway) getApp(w http.ResponseWriter, r *http.Request) {
+	rsp := apiutil.ApiResponse{}
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	app := g.pam.GetPortmapApp(id)
+	if app == nil {
+		rsp.Code = 404
+		rsp.Message = "app not found"
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	rsp.Data = app
 	apiutil.SendAPIRespWithOk(w, rsp)
 }
 
@@ -502,7 +788,7 @@ func (g *Gateway) handlePortmapHandshake(handshake []byte) (network string, addr
 		port = pmhs.TargetPort
 		return
 	}
-	pa := g.pam.GetAppByID(pmhs.ResID)
+	pa := g.prm.GetAppByID(pmhs.ResID)
 	if pa.ID == 0 {
 		err = errors.New("portmap app not found")
 		return
@@ -516,7 +802,7 @@ func (g *Gateway) handlePortmapHandshake(handshake []byte) (network string, addr
 func (g *Gateway) listResources(w http.ResponseWriter, r *http.Request) {
 	rsp := apiutil.ApiResponse{}
 
-	rsp.Data = g.pam.GetResources()
+	rsp.Data = g.prm.GetResources()
 	rsp.Message = "ok"
 	apiutil.SendAPIRespWithOk(w, rsp)
 }
@@ -530,7 +816,7 @@ func (g *Gateway) getResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resource := g.pam.GetAppByID(types.ID(id))
+	resource := g.prm.GetAppByID(types.ID(id))
 	if resource.ID == 0 {
 		rsp.Code = 404
 		rsp.Message = "resource not found"
@@ -559,7 +845,7 @@ func (g *Gateway) addResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pa.ID = types.ID(rand.Uint64())
-	if err = g.pam.AddPortmapRes(&pa); err != nil {
+	if err = g.prm.AddPortmapRes(&pa); err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
 		apiutil.SendAPIRespWithOk(w, rsp)
@@ -595,7 +881,7 @@ func (g *Gateway) updateResource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 验证资源是否存在
-	existing := g.pam.GetAppByID(pa.ID)
+	existing := g.prm.GetAppByID(pa.ID)
 	if existing.ID == 0 {
 		rsp.Code = 404
 		rsp.Message = "resource not found"
@@ -611,7 +897,7 @@ func (g *Gateway) updateResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = g.pam.UpdatePortmapRes(&pa); err != nil {
+	if err = g.prm.UpdatePortmapRes(&pa); err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
 		apiutil.SendAPIRespWithOk(w, rsp)
@@ -649,7 +935,7 @@ func (g *Gateway) deleteResource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 验证资源是否存在
-	existing := g.pam.GetAppByID(req.ID)
+	existing := g.prm.GetAppByID(req.ID)
 	if existing.ID == 0 {
 		rsp.Code = 404
 		rsp.Message = "resource not found"
@@ -657,7 +943,7 @@ func (g *Gateway) deleteResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = g.pam.DelPortmapApp(req.ID); err != nil {
+	if err = g.prm.DelPortmapApp(req.ID); err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
 		apiutil.SendAPIRespWithOk(w, rsp)

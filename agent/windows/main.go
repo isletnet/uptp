@@ -10,6 +10,7 @@ import (
 	. "github.com/lxn/walk/declarative"
 
 	"github.com/isletnet/uptp/agent"
+	"github.com/isletnet/uptp/gateway"
 )
 
 func parseUint64(s string) uint64 {
@@ -19,7 +20,7 @@ func parseUint64(s string) uint64 {
 
 type AppModel struct {
 	walk.TableModelBase
-	apps    []*agent.App
+	apps    []*gateway.PortmapApp
 	current struct {
 		IsRunning bool
 	}
@@ -37,7 +38,7 @@ func (m *AppModel) SetCurrentIndex(index int) {
 func (m *AppModel) refreshApps(logView *walk.TextEdit) error {
 	apps := agent.GetApps()
 	// 转换为指针切片
-	appPtrs := make([]*agent.App, len(apps))
+	appPtrs := make([]*gateway.PortmapApp, len(apps))
 	for i := range apps {
 		appPtrs[i] = &apps[i]
 	}
@@ -248,7 +249,7 @@ func main() {
 					}
 
 					// 更新应用信息(PeerID和ResID保持不变)
-					updatedApp := &agent.App{
+					updatedApp := &gateway.PortmapApp{
 						ID:         app.ID, // 保留原ID
 						Name:       form.Name,
 						PeerID:     app.PeerID, // 使用原PeerID
@@ -451,7 +452,7 @@ func main() {
 							logView.AppendText(fmt.Sprintf("提交后表单数据: %+v\r\n", form))
 
 							// 创建新应用实例
-							app := &agent.App{
+							app := &gateway.PortmapApp{
 								Name:       form.Name,
 								PeerID:     form.PeerID,
 								ResID:      parseUint64(form.ResID),
@@ -595,7 +596,7 @@ func main() {
 							}
 
 							// 更新应用信息(PeerID和ResID保持不变)
-							updatedApp := &agent.App{
+							updatedApp := &gateway.PortmapApp{
 								Name:       form.Name,
 								PeerID:     app.PeerID, // 使用原PeerID
 								ResID:      app.ResID,  // 使用原ResID
