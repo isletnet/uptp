@@ -3,6 +3,7 @@ module github.com/isletnet/uptp
 go 1.23.1
 
 require (
+	github.com/emirpasic/gods v1.18.1
 	github.com/go-chi/chi v1.5.5
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/schema v1.4.1
@@ -18,6 +19,7 @@ require (
 	github.com/libp2p/go-libp2p-kbucket v0.6.5
 	github.com/lxn/walk v0.0.0-20210112085537-c389da54e794
 	github.com/multiformats/go-multiaddr v0.15.0
+	github.com/sagernet/netlink v0.0.0-20240916134442-83396419aa8b
 	github.com/syndtr/goleveldb v1.0.0
 	github.com/txthinking/socks5 v0.0.0-20230325130024-4230056ae301
 	github.com/xjasonlyu/tun2socks/v2 v2.6.0-beta
@@ -124,6 +126,7 @@ require (
 	github.com/raulk/go-watchdog v1.3.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/txthinking/runnergroup v0.0.0-20210608031112-152c7c4432bf // indirect
+	github.com/vishvananda/netns v0.0.0-20211101163701-50045581ed74 // indirect
 	github.com/whyrusleeping/go-keyspace v0.0.0-20160322163242-5b898ac5add1 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
