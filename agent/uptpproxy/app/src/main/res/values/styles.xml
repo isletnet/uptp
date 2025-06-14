@@ -15,4 +15,19 @@
         <item name="buttonBarPositiveButtonStyle">@style/Widget.AppCompat.Button.Colored</item>
         <item name="buttonBarNegativeButtonStyle">@style/Widget.AppCompat.Button.Colored</item>
     </style>
+
+    <!-- Custom dark dialog theme -->
+    <style name="CustomDarkDialog" parent="ThemeOverlay.MaterialComponents.Dialog">
+        <item name="android:windowBackground">@color/dark_primary</item>
+        <item name="android:textColorPrimary">@color/white</item>
+        <item name="android:textColorSecondary">@color/gray_300</item>
+        <item name="buttonBarPositiveButtonStyle">@style/CustomDialogButton</item>
+        <item name="buttonBarNegativeButtonStyle">@style/CustomDialogButton</item>
+    </style>
+
+    <!-- Custom dialog button style -->
+    <style name="CustomDialogButton" parent="Widget.AppCompat.Button.Colored">
+        <item name="android:textColor">@color/white</item>
+        <item name="colorButtonNormal">@color/dark_secondary</item>
+    </style>
 </resources>

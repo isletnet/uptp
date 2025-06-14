@@ -84,10 +84,10 @@ class MainActivity : AppCompatActivity() {
                 return
             }
 
-            val gateway = gatewayList[position]
-            AlertDialog.Builder(this)
+//            val gateway = gatewayList[position]
+            AlertDialog.Builder(this, R.style.CustomDarkDialog)
             .setTitle(R.string.confirm_delete)
-            .setMessage("确定要删除网关 ${gateway.name} 吗？")
+//            .setMessage("确定要删除网关 ${gateway.name} 吗？")
             .setPositiveButton("删除") { _, _ ->
                 try {
                     // 调用Agent接口删除网关
