@@ -1,4 +1,4 @@
-package agent
+package gateway
 
 import (
 	"encoding/json"
@@ -105,7 +105,7 @@ func (m *PortmapAppMgr) savePortmap() error {
 	return nil
 }
 
-func (m *PortmapAppMgr) findAppWithPort(network string, port int) PortmapApp {
+func (m *PortmapAppMgr) FindAppWithPort(network string, port int) PortmapApp {
 	for _, r := range m.apps {
 		if r.LocalPort == port && r.Network == network {
 			return r

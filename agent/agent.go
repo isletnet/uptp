@@ -25,7 +25,7 @@ type agent struct {
 	p2p *p2pengine.P2PEngine
 	pm  *portmap.Portmap
 	db  *leveldb.DB
-	am  *PortmapAppMgr
+	am  *gateway.PortmapAppMgr
 
 	*proxyMgr
 
@@ -113,7 +113,7 @@ func (ag *agent) startPortmap(workDir string) error {
 	}
 	ag.pm = portmap.NewPortMap(ag.p2p.Libp2pHost())
 	ag.pm.SetGetHandshakeFunc(func(network, ip string, port int) (peerID string, handshake []byte) {
-		app := ag.am.findAppWithPort(network, port)
+		app := ag.am.FindAppWithPort(network, port)
 		if app.ResID == 0 {
 			return
 		}
@@ -159,8 +159,8 @@ func (ag *agent) close() {
 		ag.db = nil
 	}
 }
-func (ag *agent) initAppMgr(workDir string) ([]PortmapApp, error) {
-	ag.am = NewPortmapAppMgr(ag.db)
+func (ag *agent) initAppMgr(workDir string) ([]gateway.PortmapApp, error) {
+	ag.am = gateway.NewPortmapAppMgr(ag.db)
 	apps, err := ag.am.LoadPortmapApps()
 	if err != nil {
 		return nil, err
@@ -168,7 +168,7 @@ func (ag *agent) initAppMgr(workDir string) ([]PortmapApp, error) {
 	return apps, nil
 }
 
-func (ag *agent) addApp(a *PortmapApp) error {
+func (ag *agent) addApp(a *gateway.PortmapApp) error {
 	a.ID = rand.Uint64()
 	rsp, err := gateway.ResourceAuthorize(ag.p2p.Libp2pHost(), a.PeerID, gateway.AuthorizeReq{
 		ResourceID: types.ID(a.ResID),
@@ -194,7 +194,7 @@ func (ag *agent) addApp(a *PortmapApp) error {
 	return ag.am.UpdatePortmapApp(a)
 }
 
-func (ag *agent) updateAPP(a *PortmapApp) error {
+func (ag *agent) updateAPP(a *gateway.PortmapApp) error {
 	if a.ID == 0 {
 		return errors.New("app id is empty")
 	}
@@ -227,7 +227,7 @@ func (ag *agent) updateAPP(a *PortmapApp) error {
 	return ag.am.UpdatePortmapApp(exist)
 }
 
-func (ag *agent) delApp(a *PortmapApp) error {
+func (ag *agent) delApp(a *gateway.PortmapApp) error {
 	if !ag.running {
 		return errors.New("agent not running")
 	}
@@ -235,7 +235,7 @@ func (ag *agent) delApp(a *PortmapApp) error {
 	return ag.am.DelPortmapApp(a.ID)
 }
 
-func (ag *agent) getApps() []PortmapApp {
+func (ag *agent) getApps() []gateway.PortmapApp {
 	if !ag.running {
 		return nil
 	}

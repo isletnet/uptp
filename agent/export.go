@@ -1,6 +1,10 @@
 package agent
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/isletnet/uptp/gateway"
+)
 
 func Start(workDir string, withPortmap bool) error {
 	return agentIns().start(workDir, withPortmap)
@@ -10,19 +14,19 @@ func Close() {
 	agentIns().close()
 }
 
-func AddApp(a *PortmapApp) error {
+func AddApp(a *gateway.PortmapApp) error {
 	return agentIns().addApp(a)
 }
 
-func UpdateApp(a *PortmapApp) error {
+func UpdateApp(a *gateway.PortmapApp) error {
 	return agentIns().updateAPP(a)
 }
 
-func DelApp(a *PortmapApp) error {
+func DelApp(a *gateway.PortmapApp) error {
 	return agentIns().delApp(a)
 }
 
-func GetApps() []PortmapApp {
+func GetApps() []gateway.PortmapApp {
 	return agentIns().getApps()
 }
 
