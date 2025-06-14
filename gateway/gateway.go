@@ -234,6 +234,13 @@ func (g *Gateway) router(ser *apiutil.ApiServer) {
 		r.Get("/agent/android", g.downloadAPK)
 	})
 
+	ser.AddRoute("/app", func(r chi.Router) {
+		r.Post("/add", g.addApp)
+		r.Post("/update", g.updateApp)
+		r.Post("/delete", g.deleteApp)
+		r.Get("/list", g.listApps)
+	})
+
 	// 静态文件路由
 	ser.AddRoute("/", func(r chi.Router) {
 		r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
@@ -486,6 +493,150 @@ func (g *Gateway) setProxyOBProxy(w http.ResponseWriter, r *http.Request) {
 	socks5.SetOutboundProxy(req.Addr, req.User, req.Pass)
 
 	rsp.Message = "ok"
+	apiutil.SendAPIRespWithOk(w, rsp)
+}
+
+func (g *Gateway) addApp(w http.ResponseWriter, r *http.Request) {
+	rsp := apiutil.ApiResponse{}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	var app PortmapApp
+	if err := json.Unmarshal(body, &app); err != nil {
+		rsp.Code = 400
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	// 生成随机ID
+	app.ID = rand.Uint64()
+
+	// 如果应用设置为运行状态，则添加listener
+	if app.Running {
+		_, err := g.pm.AddListener(app.Network, app.LocalIP, app.LocalPort)
+		if err != nil {
+			app.Running = false
+			app.Err = err.Error()
+		}
+	}
+
+	if err := g.pam.UpdatePortmapApp(&app); err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	rsp.Message = "ok"
+	apiutil.SendAPIRespWithOk(w, rsp)
+}
+
+func (g *Gateway) updateApp(w http.ResponseWriter, r *http.Request) {
+	rsp := apiutil.ApiResponse{}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	var app PortmapApp
+	if err := json.Unmarshal(body, &app); err != nil {
+		rsp.Code = 400
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	if app.ID == 0 {
+		rsp.Code = 400
+		rsp.Message = "app id is empty"
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	// 获取当前应用状态
+	oldApp := g.pam.GetPortmapApp(app.ID)
+	if oldApp == nil {
+		rsp.Code = 404
+		rsp.Message = "app not found"
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	// 如果运行状态有变化，则更新listener
+	if app.Running != oldApp.Running {
+		if app.Running {
+			_, err := g.pm.AddListener(app.Network, app.LocalIP, app.LocalPort)
+			if err != nil {
+				app.Running = false
+				app.Err = err.Error()
+			}
+		} else {
+			g.pm.DeleteListener(app.Network, app.LocalIP, app.LocalPort)
+		}
+	}
+
+	if err := g.pam.UpdatePortmapApp(&app); err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	rsp.Message = "ok"
+	apiutil.SendAPIRespWithOk(w, rsp)
+}
+
+func (g *Gateway) deleteApp(w http.ResponseWriter, r *http.Request) {
+	rsp := apiutil.ApiResponse{}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	var req struct {
+		ID uint64 `json:"id"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		rsp.Code = 400
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	// 获取应用信息
+	app := g.pam.GetPortmapApp(req.ID)
+	if app != nil && app.Running {
+		// 如果应用正在运行，则移除listener
+		g.pm.DeleteListener(app.Network, app.LocalIP, app.LocalPort)
+	}
+
+	if err := g.pam.DelPortmapApp(req.ID); err != nil {
+		rsp.Code = 500
+		rsp.Message = err.Error()
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+
+	rsp.Message = "ok"
+	apiutil.SendAPIRespWithOk(w, rsp)
+}
+
+func (g *Gateway) listApps(w http.ResponseWriter, r *http.Request) {
+	rsp := apiutil.ApiResponse{}
+	apps := g.pam.GetPortmapApps()
+	rsp.Data = apps
 	apiutil.SendAPIRespWithOk(w, rsp)
 }
 
