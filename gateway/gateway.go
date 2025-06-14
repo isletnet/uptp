@@ -45,6 +45,7 @@ type Gateway struct {
 	pm       *portmap.Portmap
 	db       *leveldb.DB
 	prm      *PortmapResMgr
+	pam      *PortmapAppMgr
 	proxySvc *proxyService
 
 	trial bool
@@ -138,11 +139,18 @@ func (g *Gateway) Run(conf Config) error {
 	}
 	g.pe = pe
 
-	pam, err := NewPortmapResMgr(db)
+	prm, err := NewPortmapResMgr(db)
 	if err != nil {
 		return err
 	}
-	g.prm = pam
+	g.prm = prm
+
+	pam := NewPortmapAppMgr(db)
+	pmApps, err := pam.LoadPortmapApps()
+	if err != nil {
+		return err
+	}
+	g.pam = pam
 
 	// 初始化代理服务
 	g.proxySvc = &proxyService{
@@ -166,6 +174,18 @@ func (g *Gateway) Run(conf Config) error {
 		socks5.StartServe(g.pe.Libp2pHost(), g.proxyAuth)
 	}
 
+	for _, a := range pmApps {
+		if !a.Running {
+			continue
+		}
+		_, err = g.pm.AddListener(a.Network, a.LocalIP, a.LocalPort)
+		if err != nil {
+			a.Err = ""
+			a.Running = false
+			g.pam.UpdatePortmapApp(&a)
+			logging.Error("add portmap listener error: %s", err)
+		}
+	}
 	apiSer := &apiutil.ApiServer{}
 	g.router(apiSer)
 	g.authorize()
