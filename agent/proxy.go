@@ -45,6 +45,7 @@ func (ag *agent) addProxyGateway(peerID string, token string) error {
 		return err
 	}
 	rsp, err := gateway.ResourceAuthorize(ag.p2p.Libp2pHost(), peerID, gateway.AuthorizeReq{
+		Type: gateway.AuthorizeTypeProxy,
 		Proxy: &gateway.AuthorizeProxyInfo{
 			Token: types.ID(uToken),
 		},
