@@ -34,7 +34,7 @@ func AddProxyGateway(peerID string, token string) error {
 	return agentIns().addProxyGateway(peerID, token)
 }
 
-func GetProxyGateways() []string {
+func GetProxyGateways() []proxyGateway {
 	return agentIns().getProxyGatewayList()
 }
 

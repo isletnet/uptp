@@ -35,6 +35,9 @@ import android.widget.AdapterView
 import androidx.core.content.edit
 
 class MainActivity : AppCompatActivity() {
+    data class GatewayInfo(val name: String, val route: String, val dns: String)
+    private lateinit var selectedGateway: GatewayInfo
+    private lateinit var gatewayList: MutableList<GatewayInfo>
     
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.main_menu, menu)
@@ -194,6 +197,9 @@ class MainActivity : AppCompatActivity() {
                 getSharedPreferences("vpn_prefs", Context.MODE_PRIVATE).edit {
                     putInt("last_selected_gateway_position", position)
                 }
+                if (::gatewayList.isInitialized && gatewayList.size > position) {
+                    selectedGateway = gatewayList[position]
+                }
             }
             override fun onNothingSelected(parent: android.widget.AdapterView<*>) {}
         }
@@ -253,16 +259,23 @@ class MainActivity : AppCompatActivity() {
             val gwListJson = Agent.getProxyGatewaysJson()
             Log.d("MainActivity", "Gateway list: $gwListJson")
             val jsonArray = JSONArray(gwListJson)
-            val gatewayList = mutableListOf<String>()
+            gatewayList = mutableListOf<GatewayInfo>()
             for (i in 0 until jsonArray.length()) {
-                gatewayList.add(jsonArray.getString(i))
+                val item = jsonArray.getJSONObject(i)
+                gatewayList.add(GatewayInfo(
+                    item.getString("name"),
+                    item.getString("route"),
+                    item.getString("dns")
+                ))
             }
+            selectedGateway = gatewayList[gatewaySpinner.selectedItemPosition]
 
             runOnUiThread {
-                val adapter = ArrayAdapter(
+                val names = gatewayList.map { it.name }
+                val adapter = ArrayAdapter<String>(
                     this,
                     android.R.layout.simple_spinner_item,
-                    gatewayList
+                    names
                 )
                 adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
                 gatewaySpinner.adapter = adapter
@@ -322,6 +335,8 @@ class MainActivity : AppCompatActivity() {
             } else {
                 startService(Intent(this, MyVpnService::class.java).apply {
                     putExtra("selected_gateway_index", gatewaySpinner.selectedItemPosition)
+                    putExtra("route", selectedGateway.route)
+                    putExtra("dns", selectedGateway.dns)
                 })
             }
         } catch (e: Exception) {
@@ -334,6 +349,8 @@ class MainActivity : AppCompatActivity() {
         if (request == 100 && result == RESULT_OK) {
             startService(Intent(this, MyVpnService::class.java).apply {
                 putExtra("selected_gateway_index", gatewaySpinner.selectedItemPosition)
+                putExtra("route", selectedGateway.route)
+                putExtra("dns", selectedGateway.dns)
             })
         }
     }

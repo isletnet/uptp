@@ -55,6 +55,9 @@ func (ag *agent) addProxyGateway(peerID string, token string) error {
 	if rsp.Err != "" {
 		return errors.New(rsp.Err)
 	}
+	if rsp.Proxy == nil {
+		return errors.New("proxy auth failed")
+	}
 	tokenByte := make([]byte, 8)
 	binary.LittleEndian.PutUint64(tokenByte, uToken)
 	return ag.proxyMgr.addProxy(&proxyGateway{
@@ -66,10 +69,12 @@ func (ag *agent) addProxyGateway(peerID string, token string) error {
 		Name:   rsp.NodeName,
 		PeerID: peerID,
 		Token:  uToken,
+		Route:  rsp.Proxy.Route,
+		Dns:    rsp.Proxy.Dns,
 	})
 }
 
-func (ag *agent) getProxyGatewayList() []string {
+func (ag *agent) getProxyGatewayList() []proxyGateway {
 	return ag.proxyMgr.getProxys()
 }
 
@@ -159,12 +164,12 @@ func (pm *proxyMgr) getProxyByIndex(idx int) *proxyGateway {
 	}
 	return pm.proxys[idx]
 }
-func (pm *proxyMgr) getProxys() []string {
+func (pm *proxyMgr) getProxys() []proxyGateway {
 	pm.mtx.Lock()
 	defer pm.mtx.Unlock()
-	var proxys []string
+	var proxys []proxyGateway
 	for _, p := range pm.proxys {
-		proxys = append(proxys, p.Name)
+		proxys = append(proxys, *p)
 	}
 	return proxys
 }
@@ -194,6 +199,8 @@ type proxyGateway struct {
 	Name   string              `json:"name"`
 	PeerID string              `json:"peer_id"`
 	Token  uint64              `json:"token"`
+	Route  string              `json:"route"`
+	Dns    string              `json:"dns"`
 }
 
 type proxyDialer struct {

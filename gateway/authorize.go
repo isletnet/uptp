@@ -32,6 +32,8 @@ type AuthorizePortmapInfo struct {
 
 type AuthorizeProxyInfo struct {
 	Token types.ID `json:"token"`
+	Route string   `json:"route"`
+	Dns   string   `json:"dns"`
 }
 
 type AuthorizeResp struct {
@@ -125,6 +127,9 @@ func (g *Gateway) handleProxyAuth(s network.Stream, info *AuthorizeProxyInfo) {
 	if err != nil {
 		return
 	}
+	pc := g.proxySvc.getConfig()
+	resp.Proxy.Route = pc.Route
+	resp.Proxy.Dns = pc.DNS
 	s.Write(data)
 }
 

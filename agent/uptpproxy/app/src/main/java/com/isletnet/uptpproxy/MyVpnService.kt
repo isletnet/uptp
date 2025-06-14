@@ -35,7 +35,11 @@ class MyVpnService : VpnService() {
             stopTProxy(); // 处理停止请求
             return START_NOT_STICKY;
             }
-        startTProxy(intent?.getIntExtra("selected_gateway_index", 0) ?: 0); // 启动 VPN 连接
+        startTProxy(
+            intent?.getIntExtra("selected_gateway_index", 0) ?: 0,
+            intent?.getStringExtra("route") ?: "0.0.0.0/0",
+            intent?.getStringExtra("dns") ?: "223.5.5.5,223.6.6.6"
+        ); // 启动 VPN 连接
         return START_STICKY; // 保持服务存活
     }
     
@@ -45,13 +49,21 @@ class MyVpnService : VpnService() {
         stopTProxy()
     }
 
-    private fun startTProxy(idx: Int) {
+    private fun startTProxy(idx: Int, route: String, dns: String) {
         val builder = Builder().apply {
             setSession("UptpProxy VPN")
             addAddress("10.8.0.2", 24)
-            addRoute("0.0.0.0", 0)
-            addDnsServer("8.8.8.8")
-            addDnsServer("8.8.4.4")
+            
+            // 解析并添加路由
+            val routeParts = route.split("/")
+            val routeIp = routeParts[0]
+            val routePrefix = routeParts.getOrElse(1) { "0" }.toInt()
+            addRoute(routeIp, routePrefix)
+            
+            // 解析并添加DNS服务器
+            dns.split(",").forEach { dnsServer ->
+                addDnsServer(dnsServer.trim())
+            }
             setMtu(1500)
             setBlocking(true)
             
