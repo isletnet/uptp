@@ -299,7 +299,7 @@ func (pc *proxyClient) DeleteOutboundRoute(outbound *socksOutbound) error {
 func (pc *proxyClient) startTunStack() error {
 	k := &tunstack.Key{
 		Device:     tunName,
-		LogLevel:   "debug",
+		LogLevel:   "silent",
 		UDPTimeout: time.Minute,
 	}
 	tunstack.Insert(k)
