@@ -123,13 +123,19 @@ func (g *Gateway) handleProxyAuth(s network.Stream, info *AuthorizeProxyInfo) {
 		resp.Err = err.Error()
 	}
 	resp.NodeName = gwName
+	pc := g.proxySvc.getConfig()
+	resp.Proxy.Route = pc.Route
+	resp.Proxy.Dns = pc.DNS
+	if resp.Proxy.Route == "" {
+		resp.Proxy.Route = "0.0.0.0/0"
+	}
+	if resp.Proxy.Dns == "" {
+		resp.Proxy.Dns = "8.8.8.8"
+	}
 	data, err := json.Marshal(resp)
 	if err != nil {
 		return
 	}
-	pc := g.proxySvc.getConfig()
-	resp.Proxy.Route = pc.Route
-	resp.Proxy.Dns = pc.DNS
 	s.Write(data)
 }
 

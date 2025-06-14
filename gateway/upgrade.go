@@ -115,11 +115,29 @@ func (g *Gateway) upgradeMyself(w http.ResponseWriter, r *http.Request) {
 		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
-	err = os.Rename(downloadFile.Name(), binPath)
+	df, err := os.Open(downloadFile.Name())
 	if err != nil {
-		logging.Error("upgrade gateway failed: rename downloaded file error: %s", err)
+		logging.Error("upgrade gateway failed: open downloaded file: %s", err)
 		rsp.Code = 500
-		rsp.Message = "rename downloaded file failed"
+		rsp.Message = "open downloaded executable failed"
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+	defer df.Close()
+	tf, err := os.Create(binPath)
+	if err != nil {
+		logging.Error("upgrade gateway failed: open target file: %s", err)
+		rsp.Code = 500
+		rsp.Message = "open target executable failed"
+		apiutil.SendAPIRespWithOk(w, rsp)
+		return
+	}
+	defer tf.Close()
+	_, err = io.Copy(tf, df)
+	if err != nil {
+		logging.Error("upgrade gateway failed: copy file error: %s", err)
+		rsp.Code = 500
+		rsp.Message = "copy file failed"
 		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
