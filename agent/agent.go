@@ -25,7 +25,7 @@ type agent struct {
 	p2p *p2pengine.P2PEngine
 	pm  *portmap.Portmap
 	db  *leveldb.DB
-	am  *appMgr
+	am  *PortmapAppMgr
 
 	*proxyMgr
 
@@ -139,7 +139,7 @@ func (ag *agent) startPortmap(workDir string) error {
 		if err != nil {
 			a.Err = ""
 			a.Running = false
-			ag.am.updateApp(&a)
+			ag.am.UpdatePortmapApp(&a)
 			logging.Error("add portmap listener error: %s", err)
 		}
 	}
@@ -159,16 +159,16 @@ func (ag *agent) close() {
 		ag.db = nil
 	}
 }
-func (ag *agent) initAppMgr(workDir string) ([]App, error) {
-	ag.am = newAppMgr(ag.db)
-	apps, err := ag.am.loadApps()
+func (ag *agent) initAppMgr(workDir string) ([]PortmapApp, error) {
+	ag.am = NewPortmapAppMgr(ag.db)
+	apps, err := ag.am.LoadPortmapApps()
 	if err != nil {
 		return nil, err
 	}
 	return apps, nil
 }
 
-func (ag *agent) addApp(a *App) error {
+func (ag *agent) addApp(a *PortmapApp) error {
 	a.ID = rand.Uint64()
 	rsp, err := gateway.ResourceAuthorize(ag.p2p.Libp2pHost(), a.PeerID, gateway.AuthorizeReq{
 		ResourceID: types.ID(a.ResID),
@@ -191,14 +191,14 @@ func (ag *agent) addApp(a *App) error {
 			a.Err = err.Error()
 		}
 	}
-	return ag.am.updateApp(a)
+	return ag.am.UpdatePortmapApp(a)
 }
 
-func (ag *agent) updateAPP(a *App) error {
+func (ag *agent) updateAPP(a *PortmapApp) error {
 	if a.ID == 0 {
 		return errors.New("app id is empty")
 	}
-	exist := ag.am.getApp(a.ID)
+	exist := ag.am.GetPortmapApp(a.ID)
 	if exist == nil {
 		return errors.New("app not exists")
 	}
@@ -224,20 +224,20 @@ func (ag *agent) updateAPP(a *App) error {
 	} else {
 		ag.pm.DeleteListener(a.Network, a.LocalIP, a.LocalPort)
 	}
-	return ag.am.updateApp(exist)
+	return ag.am.UpdatePortmapApp(exist)
 }
 
-func (ag *agent) delApp(a *App) error {
+func (ag *agent) delApp(a *PortmapApp) error {
 	if !ag.running {
 		return errors.New("agent not running")
 	}
 	ag.pm.DeleteListener(a.Network, a.LocalIP, a.LocalPort)
-	return ag.am.delApp(a.ID)
+	return ag.am.DelPortmapApp(a.ID)
 }
 
-func (ag *agent) getApps() []App {
+func (ag *agent) getApps() []PortmapApp {
 	if !ag.running {
 		return nil
 	}
-	return ag.am.getApps()
+	return ag.am.GetPortmapApps()
 }

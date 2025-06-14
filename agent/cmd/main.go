@@ -33,7 +33,7 @@ func main() {
 				logging.Error("Usage: uptp-agent add <name> <peer_id> <network> <local_ip> <local_port> <target_addr> <target_port>")
 				return
 			}
-			app := &agent.App{
+			app := &agent.PortmapApp{
 				Name:       os.Args[2],
 				PeerID:     os.Args[3],
 				Network:    os.Args[4],
@@ -53,7 +53,7 @@ func main() {
 				logging.Error("Usage: uptp-agent del <name>")
 				return
 			}
-			if err := agent.DelApp(&agent.App{Name: os.Args[2]}); err != nil {
+			if err := agent.DelApp(&agent.PortmapApp{Name: os.Args[2]}); err != nil {
 				logging.Error("del app error: %v", err)
 			}
 			return

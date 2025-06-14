@@ -11,7 +11,7 @@ var (
 	keyPortmapApps = []byte("portmap_apps")
 )
 
-type App struct {
+type PortmapApp struct {
 	ID         uint64 `json:"id"`
 	Name       string `json:"name"`
 	PeerID     string `json:"peer_id"`
@@ -27,21 +27,21 @@ type App struct {
 	Err      string `json:"-"`
 }
 
-type appMgr struct {
+type PortmapAppMgr struct {
 	db *leveldb.DB
 
 	mtx  sync.Mutex
-	apps map[uint64]App
+	apps map[uint64]PortmapApp
 }
 
-func newAppMgr(db *leveldb.DB) *appMgr {
-	return &appMgr{
+func NewPortmapAppMgr(db *leveldb.DB) *PortmapAppMgr {
+	return &PortmapAppMgr{
 		db:   db,
-		apps: make(map[uint64]App),
+		apps: make(map[uint64]PortmapApp),
 	}
 }
 
-func (m *appMgr) loadApps() ([]App, error) {
+func (m *PortmapAppMgr) LoadPortmapApps() ([]PortmapApp, error) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 	v, err := m.db.Get(keyPortmapApps, nil)
@@ -55,18 +55,18 @@ func (m *appMgr) loadApps() ([]App, error) {
 	if err != nil {
 		return nil, err
 	}
-	return m.getApps(), nil
+	return m.GetPortmapApps(), nil
 }
 
-func (m *appMgr) getApps() []App {
-	ret := make([]App, 0, len(m.apps))
+func (m *PortmapAppMgr) GetPortmapApps() []PortmapApp {
+	ret := make([]PortmapApp, 0, len(m.apps))
 	for _, v := range m.apps {
 		ret = append(ret, v)
 	}
 	return ret
 }
 
-func (m *appMgr) getApp(id uint64) *App {
+func (m *PortmapAppMgr) GetPortmapApp(id uint64) *PortmapApp {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 	a, ok := m.apps[id]
@@ -76,21 +76,21 @@ func (m *appMgr) getApp(id uint64) *App {
 	return &a
 }
 
-func (m *appMgr) updateApp(a *App) error {
+func (m *PortmapAppMgr) UpdatePortmapApp(a *PortmapApp) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 	m.apps[a.ID] = *a
 	return m.savePortmap()
 }
 
-func (m *appMgr) delApp(id uint64) error {
+func (m *PortmapAppMgr) DelPortmapApp(id uint64) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 	delete(m.apps, id)
 	return m.savePortmap()
 }
 
-func (m *appMgr) savePortmap() error {
+func (m *PortmapAppMgr) savePortmap() error {
 	if m.apps == nil {
 		return m.db.Delete(keyPortmapApps, nil)
 	}
@@ -105,11 +105,11 @@ func (m *appMgr) savePortmap() error {
 	return nil
 }
 
-func (m *appMgr) findAppWithPort(network string, port int) App {
+func (m *PortmapAppMgr) findAppWithPort(network string, port int) PortmapApp {
 	for _, r := range m.apps {
 		if r.LocalPort == port && r.Network == network {
 			return r
 		}
 	}
-	return App{}
+	return PortmapApp{}
 }

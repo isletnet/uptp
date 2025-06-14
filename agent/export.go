@@ -10,19 +10,19 @@ func Close() {
 	agentIns().close()
 }
 
-func AddApp(a *App) error {
+func AddApp(a *PortmapApp) error {
 	return agentIns().addApp(a)
 }
 
-func UpdateApp(a *App) error {
+func UpdateApp(a *PortmapApp) error {
 	return agentIns().updateAPP(a)
 }
 
-func DelApp(a *App) error {
+func DelApp(a *PortmapApp) error {
 	return agentIns().delApp(a)
 }
 
-func GetApps() []App {
+func GetApps() []PortmapApp {
 	return agentIns().getApps()
 }
 
