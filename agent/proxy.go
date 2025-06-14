@@ -75,6 +75,10 @@ func (ag *agent) addProxyGateway(peerID string, token string) error {
 	})
 }
 
+func (ag *agent) delProxyGateway(index int) error {
+	return ag.proxyMgr.delProxyByIndex(index)
+}
+
 func (ag *agent) getProxyGatewayList() []proxyGateway {
 	return ag.proxyMgr.getProxys()
 }
@@ -175,10 +179,15 @@ func (pm *proxyMgr) getProxys() []proxyGateway {
 	return proxys
 }
 
-// func (pm *proxyMgr) delProxy(p *proxyGateway) error {
-// 	pm.mtx.Lock()
-// 	defer pm.mtx.Unlock()
-// }
+func (pm *proxyMgr) delProxyByIndex(index int) error {
+	pm.mtx.Lock()
+	defer pm.mtx.Unlock()
+	if len(pm.proxys) <= index {
+		return nil
+	}
+	pm.proxys = append(pm.proxys[:index], pm.proxys[index+1:]...)
+	return pm.saveProxys()
+}
 
 func (pm *proxyMgr) saveProxys() error {
 	if pm.proxys == nil {
