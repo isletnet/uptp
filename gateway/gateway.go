@@ -44,7 +44,7 @@ type Gateway struct {
 	pe       *p2pengine.P2PEngine
 	pm       *portmap.Portmap
 	db       *leveldb.DB
-	pam      *PortmapResMgr
+	prm      *PortmapResMgr
 	proxySvc *proxyService
 
 	trial bool
@@ -142,7 +142,7 @@ func (g *Gateway) Run(conf Config) error {
 	if err != nil {
 		return err
 	}
-	g.pam = pam
+	g.prm = pam
 
 	// 初始化代理服务
 	g.proxySvc = &proxyService{
@@ -502,7 +502,7 @@ func (g *Gateway) handlePortmapHandshake(handshake []byte) (network string, addr
 		port = pmhs.TargetPort
 		return
 	}
-	pa := g.pam.GetAppByID(pmhs.ResID)
+	pa := g.prm.GetAppByID(pmhs.ResID)
 	if pa.ID == 0 {
 		err = errors.New("portmap app not found")
 		return
@@ -516,7 +516,7 @@ func (g *Gateway) handlePortmapHandshake(handshake []byte) (network string, addr
 func (g *Gateway) listResources(w http.ResponseWriter, r *http.Request) {
 	rsp := apiutil.ApiResponse{}
 
-	rsp.Data = g.pam.GetResources()
+	rsp.Data = g.prm.GetResources()
 	rsp.Message = "ok"
 	apiutil.SendAPIRespWithOk(w, rsp)
 }
@@ -530,7 +530,7 @@ func (g *Gateway) getResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resource := g.pam.GetAppByID(types.ID(id))
+	resource := g.prm.GetAppByID(types.ID(id))
 	if resource.ID == 0 {
 		rsp.Code = 404
 		rsp.Message = "resource not found"
@@ -559,7 +559,7 @@ func (g *Gateway) addResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pa.ID = types.ID(rand.Uint64())
-	if err = g.pam.AddPortmapRes(&pa); err != nil {
+	if err = g.prm.AddPortmapRes(&pa); err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
 		apiutil.SendAPIRespWithOk(w, rsp)
@@ -595,7 +595,7 @@ func (g *Gateway) updateResource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 验证资源是否存在
-	existing := g.pam.GetAppByID(pa.ID)
+	existing := g.prm.GetAppByID(pa.ID)
 	if existing.ID == 0 {
 		rsp.Code = 404
 		rsp.Message = "resource not found"
@@ -611,7 +611,7 @@ func (g *Gateway) updateResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = g.pam.UpdatePortmapRes(&pa); err != nil {
+	if err = g.prm.UpdatePortmapRes(&pa); err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
 		apiutil.SendAPIRespWithOk(w, rsp)
@@ -649,7 +649,7 @@ func (g *Gateway) deleteResource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 验证资源是否存在
-	existing := g.pam.GetAppByID(req.ID)
+	existing := g.prm.GetAppByID(req.ID)
 	if existing.ID == 0 {
 		rsp.Code = 404
 		rsp.Message = "resource not found"
@@ -657,7 +657,7 @@ func (g *Gateway) deleteResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = g.pam.DelPortmapApp(req.ID); err != nil {
+	if err = g.prm.DelPortmapApp(req.ID); err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
 		apiutil.SendAPIRespWithOk(w, rsp)

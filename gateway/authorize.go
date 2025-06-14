@@ -49,7 +49,7 @@ func (g *Gateway) authorizeHandler(s network.Stream) {
 
 	if req.ResourceID == types.ID(666666) && g.trial {
 		authRes = true
-	} else if res := g.pam.GetAppByID(req.ResourceID); res.ID == req.ResourceID {
+	} else if res := g.prm.GetAppByID(req.ResourceID); res.ID == req.ResourceID {
 		authRes = true
 	} else {
 		token, err := g.getToken()
