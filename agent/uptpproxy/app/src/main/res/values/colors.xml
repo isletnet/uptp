@@ -14,6 +14,7 @@
     <color name="dark_secondary_variant">#3700B3</color>
     <color name="dark_background">#121212</color>
     <color name="gray_300">#E0E0E0</color>
+    <color name="gray_500">#9E9E9E</color>
     
     <!-- Common colors -->
     <color name="black">#FF000000</color>

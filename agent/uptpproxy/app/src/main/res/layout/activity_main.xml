@@ -70,24 +70,44 @@
 
             <Spinner
                 android:id="@+id/spinner"
-                android:layout_width="320dp"
+                android:layout_width="348dp"
                 android:layout_height="48dp"
-                android:minHeight="48dp"
-                android:layout_marginBottom="24dp"
                 android:layout_gravity="center_horizontal"
-                android:backgroundTint="@color/dark_secondary"/>
+                android:layout_marginBottom="24dp"
+                android:backgroundTint="@color/dark_secondary"
+                android:minHeight="48dp" />
 
-            <Button
-                android:id="@+id/vpn_button"
-                android:layout_width="320dp"
+            <LinearLayout
+                android:layout_width="348dp"
                 android:layout_height="wrap_content"
                 android:layout_gravity="center_horizontal"
-                android:text="@string/start_vpn"
-                android:textSize="18sp"
-                android:paddingVertical="16dp"
-                android:backgroundTint="@color/dark_secondary"
-                android:textColor="@color/black"
-                android:elevation="4dp"/>
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/vpn_button"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="2"
+                    android:backgroundTint="@color/dark_secondary"
+                    android:elevation="4dp"
+                    android:paddingVertical="16dp"
+                    android:text="@string/start_vpn"
+                    android:textColor="@color/black"
+                    android:textSize="18sp" />
+
+                <Button
+                    android:id="@+id/delete_button"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:backgroundTint="@color/gray_500"
+                    android:elevation="4dp"
+                    android:paddingVertical="16dp"
+                    android:text="@string/delete_gateway"
+                    android:textColor="@color/black"
+                    android:textSize="18sp" />
+            </LinearLayout>
 
         </LinearLayout>
 

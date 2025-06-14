@@ -38,7 +38,8 @@ class MainActivity : AppCompatActivity() {
     data class GatewayInfo(val name: String, val route: String, val dns: String)
     private lateinit var selectedGateway: GatewayInfo
     private lateinit var gatewayList: MutableList<GatewayInfo>
-    
+    private lateinit var deleteButton: Button
+
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         menuInflater.inflate(R.menu.main_menu, menu)
         return true
@@ -69,6 +70,60 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+
+    private fun updateButtonState(isConnected: Boolean) {
+        deleteButton.isEnabled = !isConnected
+    }
+
+    private fun deleteCurrentGateway() {
+        if (::selectedGateway.isInitialized && !gatewayList.isEmpty()) {
+
+            val position = gatewaySpinner.selectedItemPosition
+            if (position < 0 || position >= gatewayList.size) {
+                showError("无效的网关选择")
+                return
+            }
+
+            val gateway = gatewayList[position]
+            AlertDialog.Builder(this)
+            .setTitle(R.string.confirm_delete)
+            .setMessage("确定要删除网关 ${gateway.name} 吗？")
+            .setPositiveButton("删除") { _, _ ->
+                try {
+                    // 调用Agent接口删除网关
+                    Agent.delProxyGateway(position.toLong())
+
+                    // 从列表中移除
+                    gatewayList.removeAt(position)
+
+                    // 更新UI
+                    runOnUiThread {
+                        val adapter = ArrayAdapter<String>(
+                                this,
+                                android.R.layout.simple_spinner_item,
+                                gatewayList.map { it.name }
+                        )
+                        adapter.setDropDownViewResource(android.R.layout.simple_spinner_item)
+                        gatewaySpinner.adapter = adapter
+
+                        if (gatewayList.isNotEmpty()) {
+                            val newPos = if (position >= gatewayList.size) gatewayList.size - 1 else position
+                            gatewaySpinner.setSelection(newPos)
+                            selectedGateway = gatewayList[newPos]
+                        }
+
+                        Toast.makeText(this, R.string.delete_success, Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    showError("删除网关失败: ${e.message}")
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+        } else {
+            Toast.makeText(this, "请先选择网关", Toast.LENGTH_SHORT).show()
+        }
+    }
     private fun showSelectAppsDialog() {
         val dialogView = layoutInflater.inflate(R.layout.dialog_select_apps, null)
         val appList = dialogView.findViewById<RecyclerView>(R.id.appList)
@@ -188,6 +243,7 @@ class MainActivity : AppCompatActivity() {
         
         // 初始化UI组件
         vpnButton = findViewById<Button>(R.id.vpn_button)
+        deleteButton = findViewById(R.id.delete_button)
         statusText = findViewById<TextView>(R.id.status_text)
         gatewaySpinner = findViewById<Spinner>(R.id.spinner)
 
@@ -217,6 +273,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+        deleteButton.setOnClickListener { deleteCurrentGateway() }
         
         registerReceiver(vpnStateReceiver, IntentFilter(MyVpnService.ACTION_VPN_STATE_CHANGED), Context.RECEIVER_NOT_EXPORTED)
         
@@ -268,7 +325,6 @@ class MainActivity : AppCompatActivity() {
                     item.getString("dns")
                 ))
             }
-            selectedGateway = gatewayList[gatewaySpinner.selectedItemPosition]
 
             runOnUiThread {
                 val names = gatewayList.map { it.name }
@@ -287,6 +343,7 @@ class MainActivity : AppCompatActivity() {
                         gatewaySpinner.setSelection(0)
                     }
                 }
+                selectedGateway = gatewayList[gatewaySpinner.selectedItemPosition]
             }
         }catch (e: Exception){
             Log.d("MainActivity","读取gateway列表失败: ${e.message}")
@@ -363,7 +420,7 @@ class MainActivity : AppCompatActivity() {
             showError("断开网关失败: ${e.message}")
         }
     }
-    
+
     private fun updateButtonText() {
         if (MyVpnService.isRunning) {
             gatewaySpinner.isEnabled = false

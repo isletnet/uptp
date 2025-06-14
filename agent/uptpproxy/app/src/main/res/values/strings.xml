@@ -7,4 +7,7 @@
     <string name="usage_instructions">使用说明：\n1. 添加网关\n2. 选择需要代理的应用\n3. 点击连接网关按钮\n4. 应用将通过网关访问网络</string>
     <string name="start_vpn">连接网关</string>
     <string name="input_network_id">请输入网关ID</string>
+    <string name="delete_gateway">删除网关</string>
+    <string name="confirm_delete">确定要删除当前网关吗？</string>
+    <string name="delete_success">网关已删除</string>
 </resources>
