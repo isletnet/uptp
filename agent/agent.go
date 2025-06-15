@@ -171,6 +171,7 @@ func (ag *agent) initAppMgr(workDir string) ([]gateway.PortmapApp, error) {
 func (ag *agent) addApp(a *gateway.PortmapApp) error {
 	a.ID = types.ID(rand.Uint64())
 	rsp, err := gateway.ResourceAuthorize(ag.p2p.Libp2pHost(), a.PeerID, gateway.AuthorizeReq{
+		Type: gateway.AuthorizeTypePortmap,
 		Portmap: &gateway.AuthorizePortmapInfo{
 			ResourceID: types.ID(a.ResID),
 		},

@@ -573,6 +573,7 @@ func (g *Gateway) addApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	authRsp, err := ResourceAuthorize(g.pe.Libp2pHost(), app.PeerID, AuthorizeReq{
+		Type: AuthorizeTypePortmap,
 		Portmap: &AuthorizePortmapInfo{
 			ResourceID: types.ID(app.ResID),
 		},
@@ -649,6 +650,7 @@ func (g *Gateway) updateApp(w http.ResponseWriter, r *http.Request) {
 	}
 	if app.PeerID != oldApp.PeerID || app.ResID != oldApp.ResID {
 		authRsp, err := ResourceAuthorize(g.pe.Libp2pHost(), app.PeerID, AuthorizeReq{
+			Type: AuthorizeTypePortmap,
 			Portmap: &AuthorizePortmapInfo{
 				ResourceID: types.ID(app.ResID),
 			},
@@ -703,7 +705,7 @@ func (g *Gateway) deleteApp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		ID uint64 `json:"id"`
+		ID types.ID `json:"id"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
 		rsp.Code = 400
@@ -713,13 +715,13 @@ func (g *Gateway) deleteApp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 获取应用信息
-	app := g.pam.GetPortmapApp(req.ID)
+	app := g.pam.GetPortmapApp(req.ID.Uint64())
 	if app != nil && app.Running {
 		// 如果应用正在运行，则移除listener
 		g.pm.DeleteListener(app.Network, app.LocalIP, app.LocalPort)
 	}
 
-	if err := g.pam.DelPortmapApp(req.ID); err != nil {
+	if err := g.pam.DelPortmapApp(req.ID.Uint64()); err != nil {
 		rsp.Code = 500
 		rsp.Message = err.Error()
 		apiutil.SendAPIRespWithOk(w, rsp)
