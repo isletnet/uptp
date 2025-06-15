@@ -160,6 +160,8 @@ func (g *Gateway) Run(conf Config) error {
 	if err := g.proxySvc.loadConfig(); err != nil {
 		return err
 	}
+	proxyConfig := g.proxySvc.getConfig()
+	socks5.SetOutboundProxy(proxyConfig.ProxyAddr, proxyConfig.ProxyUser, proxyConfig.ProxyPass)
 
 	g.pm = portmap.NewPortMap(pe.Libp2pHost())
 	g.pm.SetHandleHandshakeFunc(g.handlePortmapHandshake)
@@ -441,6 +443,7 @@ func (g *Gateway) updateProxyConfig(w http.ResponseWriter, r *http.Request) {
 		apiutil.SendAPIRespWithOk(w, rsp)
 		return
 	}
+	socks5.SetOutboundProxy(req.ProxyAddr, req.ProxyUser, req.ProxyPass)
 
 	rsp.Message = "ok"
 	apiutil.SendAPIRespWithOk(w, rsp)
