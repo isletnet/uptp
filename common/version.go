@@ -32,5 +32,5 @@ func CompareVersion(v1, v2 string) int {
 }
 
 var (
-	GatewayVersion = "0.3.3"
+	GatewayVersion = "0.3.5"
 )
