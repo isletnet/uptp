@@ -668,6 +668,8 @@ func (g *Gateway) updateApp(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		app.PeerName = authRsp.NodeName
+	} else {
+		app.PeerName = oldApp.PeerName
 	}
 
 	// 如果运行状态有变化，则更新listener
