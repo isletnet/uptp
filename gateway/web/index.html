@@ -114,6 +114,56 @@
             </div>
         </div>
 
+        <!-- 透明代理出口列表 -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">透明代理出口列表</h5>
+                <button class="btn btn-primary" onclick="showAddProxyClientModal()">
+                    <i class="bi bi-plus-lg"></i> 添加出口
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>备注</th>
+                                <th>目标网段</th>
+                                <th>出口网关</th>
+                                <th>状态</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="proxyClientList">
+                            <script id="proxyClientRowTemplate" type="text/template">
+                                <tr>
+                                    <td>{{remark}}</td>
+                                    <td>{{route}}</td>
+                                    <td>{{peer_name}}</td>
+                                    <td>
+                                        <span class="badge bg-{{open ? 'success' : 'secondary'}}">
+                                            {{open ? '启用' : '停用'}}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-{{open ? 'danger' : 'success'}}" onclick="toggleProxyClientStatus('{{id}}', {{!open}})">
+                                            <i class="bi bi-{{open ? 'pause' : 'play'}}"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-primary ms-1" onclick="editProxyClient('{{id}}')">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger ms-1" onclick="deleteProxyClient('{{id}}')">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            </script>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <!-- 端口映射资源列表 -->
         <div class="card mb-4">
             <div class="card-header d-flex justify-content-between align-items-center">
@@ -309,7 +359,7 @@
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Peer ID</label>
-                            <input type="text" class="form-control" id="peerId" required>
+                            <input type="text" class="form-control" id="PortmapPeerId" required>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">资源ID</label>
@@ -339,6 +389,47 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
                     <button type="button" class="btn btn-primary" onclick="savePortmap()">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加/编辑代理出口模态框 -->
+    <div class="modal fade" id="proxyClientModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="proxyClientModalTitle">添加代理出口</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="proxyClientForm">
+                        <input type="hidden" id="proxyClientId">
+                        <div class="mb-3">
+                            <label class="form-label">备注</label>
+                            <input type="text" class="form-control" id="remark" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">目标网段</label>
+                            <input type="text" class="form-control" id="route" placeholder="例如: 192.168.1.0/24" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Peer ID</label>
+                            <input type="text" class="form-control" id="proxyClientPeerId" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Token</label>
+                            <input type="text" class="form-control" id="clientToken" required>
+                        </div>
+                        <div class="mb-3 form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="open" checked>
+                            <label class="form-check-label" for="open">启用代理</label>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="saveProxyClient()">保存</button>
                 </div>
             </div>
         </div>

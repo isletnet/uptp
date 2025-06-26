@@ -11,11 +11,6 @@ import (
 	"github.com/isletnet/uptp/upgrade"
 )
 
-type versionCheck struct {
-	CurrVersion   string `json:"current_version"`
-	LatestVersion string `json:"latest_version"`
-}
-
 // func (g *Gateway) checkVersion(w http.ResponseWriter, r *http.Request) {
 // 	rsp := apiutil.ApiResponse{}
 // 	resp, err := upgrade.QueryLatestVersion(g.pe.Libp2pHost(), "gateway")

@@ -2,7 +2,10 @@ package main
 
 import (
 	"os"
+	"os/signal"
 	"path/filepath"
+	"sync"
+	"syscall"
 
 	"github.com/isletnet/uptp/gateway"
 	"github.com/isletnet/uptp/logger"
@@ -57,10 +60,24 @@ func main() {
 	if rc.trial {
 		gateway.Instance().SetTrialMod()
 	}
-	if err := gateway.Instance().Run(gateway.Config{
-		LogMod:   lm,
-		LogLevel: rc.logLevel,
-	}); err != nil {
-		logging.Error("gateway run error: %s", err)
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := gateway.Instance().Run(gateway.Config{
+			LogMod:   lm,
+			LogLevel: rc.logLevel,
+		}); err != nil {
+			logging.Error("gateway run error: %s", err)
+		}
+		logging.Info("uptp gateway run end")
+	}()
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	select {
+	case <-sigChan:
+	case <-gateway.Instance().ExitSignalChan():
 	}
+	gateway.Instance().Stop()
+	wg.Wait()
 }

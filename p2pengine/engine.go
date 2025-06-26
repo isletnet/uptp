@@ -15,6 +15,7 @@ import (
 	"github.com/isletnet/uptp/logging"
 	"github.com/libp2p/go-libp2p"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
+	"github.com/libp2p/go-libp2p-kbucket/peerdiversity"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/event"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -25,6 +26,7 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/net/swarm"
 	"github.com/libp2p/go-libp2p/p2p/security/noise"
 	"github.com/multiformats/go-multiaddr"
+	ma "github.com/multiformats/go-multiaddr"
 	// "github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/relay"
 )
 
@@ -104,7 +106,7 @@ func NewP2PEngine(listenPort int, seed []byte, logFile, dhtDBPath string, clentM
 	} else {
 		rm, err := rcmgr.NewResourceManager(rcmgr.NewFixedLimiter(rcmgr.InfiniteLimits))
 		if err != nil {
-			lplogger.Error("create infinite limiter resource manager error: %s", err)
+			lplogger.Errorf("create infinite limiter resource manager error: %s", err)
 		} else {
 			opts = append(opts, libp2p.ResourceManager(rm))
 		}
@@ -156,7 +158,7 @@ func NewP2PEngine(listenPort int, seed []byte, logFile, dhtDBPath string, clentM
 		for _, b := range bf() {
 			addrInfo, err := peer.AddrInfoFromString(b)
 			if err != nil {
-				lplogger.Error("parse bootstrap addr %s error: %s", b, err)
+				lplogger.Errorf("parse bootstrap addr %s error: %s", b, err)
 				continue
 			}
 			bootstrapAddr = append(bootstrapAddr, *addrInfo)
@@ -167,7 +169,21 @@ func NewP2PEngine(listenPort int, seed []byte, logFile, dhtDBPath string, clentM
 	dhtOpt := []dht.Option{
 		dht.ProtocolPrefix("/uptp"),
 		dht.Mode(dhtMode),
-		dht.BootstrapPeersFunc(bootstrapFunc)}
+		dht.BootstrapPeersFunc(bootstrapFunc),
+		dht.QueryFilter(func(dht interface{}, ai peer.AddrInfo) bool {
+			lplogger.Debugf("query filter: %s", ai.String())
+			return true
+		}),
+		dht.RoutingTableFilter(func(dht interface{}, p peer.ID) bool {
+			lplogger.Debugf("routing table filter: %s", p.String())
+			return true
+		}),
+		dht.AddressFilter(func(addrs []multiaddr.Multiaddr) []multiaddr.Multiaddr {
+			lplogger.Debugf("address filter: %s", addrs)
+			return addrs
+		}),
+		// dht.RoutingTablePeerDiversityFilter(&MyPeerIPGroupFilter{}),
+	}
 
 	if ds != nil {
 		dstore := dsync.MutexWrap(ds)
@@ -194,16 +210,16 @@ func NewP2PEngine(listenPort int, seed []byte, logFile, dhtDBPath string, clentM
 func (pe *P2PEngine) listenAndHandleConnectEvent() {
 	sub, err := pe.Libp2pHost().EventBus().Subscribe(new(event.EvtPeerConnectednessChanged))
 	if err != nil {
-		lplogger.Error("subscribe connectedness change event error: %s", err)
+		lplogger.Errorf("subscribe connectedness change event error: %s", err)
 	}
 	for {
 		evt := <-sub.Out()
 		connEvt := evt.(event.EvtPeerConnectednessChanged)
 		if connEvt.Connectedness == network.Connected {
-			lplogger.Debug("peer %s connected", connEvt.Peer.ShortString())
+			lplogger.Debugf("peer %s connected", connEvt.Peer.ShortString())
 			// pe.Libp2pHost().ConnManager().Protect(connEvt.Peer, "connected")
 		} else {
-			lplogger.Debug("peer %s disconnected", connEvt.Peer.ShortString())
+			lplogger.Debugf("peer %s disconnected", connEvt.Peer.ShortString())
 			pe.Libp2pHost().Peerstore().RemovePeer(connEvt.Peer)
 		}
 	}
@@ -292,3 +308,23 @@ func (pe *P2PEngine) Close() error {
 // 	// 	raddrs = append(raddrs, pub)
 // 	// }
 // }
+
+type MyPeerIPGroupFilter struct{}
+
+func (mf *MyPeerIPGroupFilter) Allow(pgi peerdiversity.PeerGroupInfo) (allow bool) {
+	lplogger.Debugf("MyPeerIPGroupFilter allow %s:%s", pgi.Id.String(), pgi.IPGroupKey)
+	return true
+}
+
+func (mf *MyPeerIPGroupFilter) Increment(pgi peerdiversity.PeerGroupInfo) {
+	lplogger.Debugf("MyPeerIPGroupFilter Increment %s:%s", pgi.Id.String(), pgi.IPGroupKey)
+}
+
+func (mf *MyPeerIPGroupFilter) Decrement(pgi peerdiversity.PeerGroupInfo) {
+	lplogger.Debugf("MyPeerIPGroupFilter Decrement %s:%s", pgi.Id.String(), pgi.IPGroupKey)
+}
+
+func (mf *MyPeerIPGroupFilter) PeerAddresses(pid peer.ID) []ma.Multiaddr {
+	lplogger.Debugf("MyPeerIPGroupFilter PeerAddresses %s", pid.String())
+	return nil
+}

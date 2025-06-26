@@ -1,18 +1,23 @@
 // API 基础 URL
 const API_BASE_URL = '/resource';
+const PROXY_CLIENT_API_BASE_URL = '/proxy_client';
+const PROXY_SERVICE_API_BASE_UEL = '/proxy_service'
 
 // 模态框实例
 let resourceModal;
+let proxyClientModal;
 
 // 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', function() {
     resourceModal = new bootstrap.Modal(document.getElementById('resourceModal'));
     gatewayNameModal = new bootstrap.Modal(document.getElementById('gatewayNameModal'));
     portmapModal = new bootstrap.Modal(document.getElementById('portmapModal'));
+    proxyClientModal = new bootstrap.Modal(document.getElementById('proxyClientModal'));
     loadResources();
     loadGatewayInfo();
     loadPortmapApps();
     loadProxyConfig();
+    loadProxyClients();
 });
 
 // 加载端口映射资源列表
@@ -22,7 +27,6 @@ async function loadResources() {
         const data = await response.json();
         
         if (data.code === 0) {
-            // 确保 data.data 是数组
             const resources = Array.isArray(data.data) ? data.data : [];
             renderResourceList(resources);
         } else {
@@ -79,7 +83,7 @@ function showAddModal() {
     resourceModal.show();
 }
 
-// 显示编辑资源模态框
+// 编辑资源
 async function editResource(id) {
     try {
         const response = await fetch(`${API_BASE_URL}/get/${id}`);
@@ -259,7 +263,6 @@ function copyToClipboard(text) {
         return;
     }
 
-    // 创建临时textarea元素用于复制
     const textarea = document.createElement('textarea');
     textarea.value = text;
     textarea.style.position = 'fixed';
@@ -355,7 +358,7 @@ async function editPortmap(id) {
             document.getElementById('portmapModalTitle').textContent = '编辑端口映射';
             document.getElementById('portmapId').value = portmap.id;
             document.getElementById('portmapName').value = portmap.name;
-            document.getElementById('peerId').value = portmap.peer_id;
+            document.getElementById('PortmapPeerId').value = portmap.peer_id;
             document.getElementById('resId').value = portmap.res_id;
             document.getElementById('portmapNetwork').value = portmap.network;
             document.getElementById('localIp').value = portmap.local_ip;
@@ -381,7 +384,7 @@ async function savePortmap() {
     const portmapId = document.getElementById('portmapId').value;
     const portmap = {
         name: document.getElementById('portmapName').value,
-        peer_id: document.getElementById('peerId').value,
+        peer_id: document.getElementById('PortmapPeerId').value,
         res_id: document.getElementById('resId').value,
         network: document.getElementById('portmapNetwork').value,
         local_ip: document.getElementById('localIp').value,
@@ -466,7 +469,7 @@ function downloadAndroidClient() {
 // 加载代理配置
 async function loadProxyConfig() {
     try {
-        const response = await fetch('/proxy/config');
+        const response = await fetch(`${PROXY_SERVICE_API_BASE_UEL}/config`);
         const data = await response.json();
         
         if (data.code === 0) {
@@ -495,7 +498,7 @@ async function saveProxyConfig() {
     };
 
     try {
-        const response = await fetch('/proxy/config', {
+        const response = await fetch(`${PROXY_SERVICE_API_BASE_UEL}/config`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -512,5 +515,198 @@ async function saveProxyConfig() {
         }
     } catch (error) {
         showError('保存代理配置失败：' + error.message);
+    }
+}
+
+// 加载代理出口列表
+async function loadProxyClients() {
+    try {
+        const response = await fetch(`${PROXY_CLIENT_API_BASE_URL}/list`);
+        const data = await response.json();
+        
+        if (data.code === 0) {
+            const clients = Array.isArray(data.data) ? data.data : [];
+            renderProxyClients(clients);
+        } else {
+            showError('加载代理出口列表失败：' + data.message);
+        }
+    } catch (error) {
+        showError('加载代理出口列表失败：' + error.message);
+    }
+}
+
+// 渲染代理出口列表
+function renderProxyClients(clients) {
+    const tbody = document.getElementById('proxyClientList');
+    tbody.innerHTML = '';
+
+    if (!clients || clients.length === 0) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td colspan="6" class="text-center">暂无数据</td>';
+        tbody.appendChild(tr);
+        return;
+    }
+
+    clients.forEach(client => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${client.remark}</td>
+            <td>${client.route}</td>
+            <td>${client.peer_name}</td>
+            <td>
+                <span class="badge bg-${client.open ? 'success' : 'secondary'}">
+                    ${client.open ? '启用' : '停用'}
+                </span>
+            </td>
+            <td>
+                <button class="btn btn-sm btn-outline-${client.open ? 'danger' : 'success'}" onclick="toggleProxyClientStatus('${client.id}', ${!client.open})">
+                    <i class="bi bi-${client.open ? 'pause' : 'play'}"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-primary ms-1" onclick="editProxyClient('${client.id}')">
+                    <i class="bi bi-pencil"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger ms-1" onclick="deleteProxyClient('${client.id}')">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+// 显示添加代理出口模态框
+function showAddProxyClientModal() {
+    document.getElementById('proxyClientModalTitle').textContent = '添加代理出口';
+    document.getElementById('proxyClientForm').reset();
+    document.getElementById('proxyClientId').value = '';
+    proxyClientModal.show();
+}
+
+// 编辑代理出口
+async function editProxyClient(id) {
+    try {
+        const response = await fetch(`${PROXY_CLIENT_API_BASE_URL}/get/${id}`);
+        const data = await response.json();
+        
+        if (data.code === 0) {
+            const client = data.data;
+            document.getElementById('proxyClientModalTitle').textContent = '编辑代理出口';
+            document.getElementById('proxyClientId').value = client.id;
+            document.getElementById('proxyClientPeerId').value = client.peer;
+            document.getElementById('clientToken').value = client.token;
+            document.getElementById('remark').value = client.remark || '';
+            document.getElementById('route').value = client.route || '0.0.0.0/0';
+            document.getElementById('open').checked = client.open !== false;
+            proxyClientModal.show();
+        } else {
+            showError('获取代理出口信息失败：' + data.message);
+        }
+    } catch (error) {
+        showError('获取代理出口信息失败：' + error.message);
+    }
+}
+
+// 保存代理出口
+async function saveProxyClient() {
+    const form = document.getElementById('proxyClientForm');
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+
+    const clientId = document.getElementById('proxyClientId').value;
+    const client = {
+        peer: document.getElementById('proxyClientPeerId').value,
+        token: document.getElementById('clientToken').value,
+        remark: document.getElementById('remark').value || '',
+        open: document.getElementById('open').checked,
+        route: document.getElementById('route').value || '0.0.0.0/0'
+    };
+
+    try {
+        const url = clientId ? `${PROXY_CLIENT_API_BASE_URL}/update` : `${PROXY_CLIENT_API_BASE_URL}/add`;
+        if (clientId) {
+            client.id = clientId;
+        }
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(client)
+        });
+
+        const data = await response.json();
+        if (data.code === 0) {
+            proxyClientModal.hide();
+            loadProxyClients();
+        } else {
+            showError('保存代理出口失败：' + data.message);
+        }
+    } catch (error) {
+        showError('保存代理出口失败：' + error.message);
+    }
+}
+
+// 切换代理出口状态
+async function toggleProxyClientStatus(id, newStatus) {
+    try {
+        // 先获取当前配置
+        const getResponse = await fetch(`${PROXY_CLIENT_API_BASE_URL}/get/${id}`);
+        const getData = await getResponse.json();
+        
+        if (getData.code !== 0) {
+            showError('获取代理出口信息失败：' + getData.message);
+            return;
+        }
+
+        const client = getData.data;
+        // 更新状态
+        client.open = newStatus;
+
+        // 提交更新
+        const updateResponse = await fetch(`${PROXY_CLIENT_API_BASE_URL}/update`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(client)
+        });
+
+        const updateData = await updateResponse.json();
+        if (updateData.code === 0) {
+            loadProxyClients();
+        } else {
+            showError('切换状态失败：' + updateData.message);
+        }
+    } catch (error) {
+        showError('切换状态失败：' + error.message);
+    }
+}
+
+// 删除代理出口
+async function deleteProxyClient(id) {
+    if (!confirm('确定要删除此代理出口吗？')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`${PROXY_CLIENT_API_BASE_URL}/delete`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ id: id })
+        });
+        const data = await response.json();
+        
+        if (data.code === 0) {
+            loadProxyClients();
+        } else {
+            showError('删除代理出口失败：' + data.message);
+        }
+    } catch (error) {
+        showError('删除代理出口失败：' + error.message);
     }
 }
