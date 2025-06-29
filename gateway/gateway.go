@@ -12,18 +12,18 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/go-chi/chi"
+	"github.com/google/uuid"
 	"github.com/isletnet/uptp/apiutil.go"
+	"github.com/isletnet/uptp/common"
 	"github.com/isletnet/uptp/logger"
 	"github.com/isletnet/uptp/logging"
 	"github.com/isletnet/uptp/p2pengine"
 	"github.com/isletnet/uptp/portmap"
 	"github.com/isletnet/uptp/socks5"
 	"github.com/isletnet/uptp/types"
-
-	"github.com/go-chi/chi"
-	"github.com/google/uuid"
-	"github.com/isletnet/uptp/common"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/errors"
 	"github.com/syndtr/goleveldb/leveldb/opt"
@@ -53,6 +53,10 @@ type Gateway struct {
 	exitCh      chan bool
 
 	trial bool
+
+	// 会话管理
+	sessions   map[string]bool
+	sessionMux sync.RWMutex
 }
 
 type Config struct {
@@ -109,6 +113,14 @@ func (g *Gateway) Run(conf Config) error {
 		return err
 	}
 	g.db = db
+
+	// 初始化默认密码
+	if _, err := g.db.Get([]byte("admin_password"), nil); err != nil {
+		err = g.db.Put([]byte("admin_password"), []byte("admin123"), nil)
+		if err != nil {
+			return err
+		}
+	}
 
 	us, err := os.ReadFile("uuid")
 	if err != nil && os.IsExist(err) {
@@ -217,7 +229,7 @@ func (g *Gateway) Run(conf Config) error {
 			logging.Error("add portmap listener error: %s", err)
 		}
 	}
-	apiSer := &apiutil.ApiServer{}
+	apiSer := apiutil.NewApiServer()
 	g.router(apiSer)
 	g.authorize()
 
@@ -255,6 +267,16 @@ func (g *Gateway) Stop() {
 func (g *Gateway) router(ser *apiutil.ApiServer) {
 	// 初始化文件服务器
 	fileServer := http.FileServer(getWebFS())
+
+	// 添加会话中间件
+	ser.Use(g.authMiddleware)
+
+	// 添加登录路由
+	ser.AddRoute("/login", func(r chi.Router) {
+		r.Post("/", g.handleLogin)
+		r.Post("/change_password", g.handleChangePassword)
+		r.Post("/logout", g.handleLogout)
+	})
 
 	ser.AddRoute("/resource", func(r chi.Router) {
 		r.Get("/list", g.listResources)
@@ -309,6 +331,153 @@ func (g *Gateway) router(ser *apiutil.ApiServer) {
 		r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
 			fileServer.ServeHTTP(w, r)
 		})
+	})
+}
+
+// 处理登录请求
+func (g *Gateway) handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	// 验证当前密码
+	storedPass, err := g.db.Get([]byte("admin_password"), nil)
+	if err != nil || req.CurrentPassword != string(storedPass) {
+		http.Error(w, "Invalid current password", http.StatusUnauthorized)
+		return
+	}
+
+	// 更新密码
+	err = g.db.Put([]byte("admin_password"), []byte(req.NewPassword), nil)
+	if err != nil {
+		http.Error(w, "Failed to update password", http.StatusInternalServerError)
+		return
+	}
+
+	w.Write([]byte(`{"success":true}`))
+}
+
+func (g *Gateway) handleLogout(w http.ResponseWriter, r *http.Request) {
+	// 清除cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:    "auth_token",
+		Value:   "",
+		Path:    "/",
+		Expires: time.Unix(0, 0),
+	})
+
+	// 清除session
+	token := r.Header.Get("Authorization")
+	if token != "" {
+		g.sessionMux.Lock()
+		delete(g.sessions, token)
+		g.sessionMux.Unlock()
+	}
+
+	w.Write([]byte(`{"success":true}`))
+}
+
+func (g *Gateway) handleLogin(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	// 从数据库获取密码
+	storedPass, err := g.db.Get([]byte("admin_password"), nil)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// 验证用户名和密码
+	if req.Username != "admin" || req.Password != string(storedPass) {
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		return
+	}
+
+	// 生成会话token
+	token := uuid.New().String()
+
+	// 设置cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:    "auth_token",
+		Value:   token,
+		Path:    "/",
+		Expires: time.Now().Add(time.Hour),
+	})
+
+	g.sessionMux.Lock()
+	defer g.sessionMux.Unlock()
+	if g.sessions == nil {
+		g.sessions = make(map[string]bool)
+	}
+	g.sessions[token] = true
+	// 设置session过期时间为1小时
+	time.AfterFunc(time.Minute*15, func() {
+		g.sessionMux.Lock()
+		delete(g.sessions, token)
+		g.sessionMux.Unlock()
+	})
+
+	// 返回token
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"token":   token,
+	})
+}
+
+// 会话验证中间件
+func (g *Gateway) authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 排除登录页、静态资源和API路由
+		if r.URL.Path == "/js/login.js" ||
+			r.URL.Path == "/css/login.css" ||
+			r.URL.Path == "/css/style.css" ||
+			r.URL.Path == "/favicon.ico" ||
+			strings.HasPrefix(r.URL.Path, "/login") ||
+			strings.HasPrefix(r.URL.Path, "/static/") ||
+			strings.HasPrefix(r.URL.Path, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// 检查会话token
+		token := r.Header.Get("Authorization")
+		if token == "" {
+			if cookie, err := r.Cookie("auth_token"); err == nil {
+				token = cookie.Value
+			}
+		}
+
+		g.sessionMux.RLock()
+		validSession := token != "" && g.sessions[token]
+		g.sessionMux.RUnlock()
+
+		if !validSession {
+			// 对于浏览器请求重定向到登录页
+			if strings.Contains(r.Header.Get("Accept"), "text/html") {
+				http.Redirect(w, r, "/login.html", http.StatusFound)
+				return
+			}
+			// 对于API请求返回401
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		next.ServeHTTP(w, r)
 	})
 }
 

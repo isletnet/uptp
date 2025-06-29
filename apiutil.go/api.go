@@ -5,22 +5,25 @@ import (
 	"errors"
 	"net"
 	"net/http"
-	"sync"
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 )
 
 type ApiServer struct {
-	once sync.Once
 	*chi.Mux
 }
 
+func NewApiServer() *ApiServer {
+	ret := &ApiServer{
+		Mux: chi.NewRouter(),
+	}
+	ret.Use(middleware.Logger)
+
+	return ret
+}
+
 func (s *ApiServer) AddRoute(pattern string, fn func(chi.Router)) {
-	s.once.Do(func() {
-		s.Mux = chi.NewRouter()
-		s.Use(middleware.Logger)
-	})
 	s.Route(pattern, fn)
 }
 

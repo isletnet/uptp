@@ -710,3 +710,30 @@ async function deleteProxyClient(id) {
         showError('删除代理出口失败：' + error.message);
     }
 }
+// 退出登录函数
+async function logout() {
+    try {
+        // 调用后端logout API
+        const response = await fetch('/login/logout', {
+            method: 'POST',
+            credentials: 'include',  // 确保发送cookie
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': localStorage.getItem('authToken')
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('退出失败: ' + (await response.text()));
+        }
+        
+        // 清除本地存储的token
+        localStorage.removeItem('authToken');
+        
+        // 跳转到登录页
+        window.location.href = '/login.html';
+    } catch (error) {
+        console.error('退出登录失败:', error);
+        alert('退出登录失败: ' + error.message);
+    }
+}
