@@ -10,7 +10,7 @@ require (
 	github.com/ipfs/go-datastore v0.8.2
 	github.com/ipfs/go-ds-leveldb v0.5.2
 	github.com/ipfs/go-log/v2 v2.5.1
-	github.com/isletnet/service v1.1.0
+	github.com/isletnet/service v1.2.0
 	github.com/lesismal/nbio v1.6.3
 	github.com/libp2p/go-libp2p v0.41.1
 	github.com/libp2p/go-libp2p-gostream v0.6.0
